@@ -1,0 +1,46 @@
+[project]
+name = "tfr-plugins-public"
+version = "0.1.0"
+description = "Public plugin collection for TFR"
+readme = "README.md"
+license = "MIT"
+license-files = ["LICENSE"]
+requires-python = ">=3.12"
+dependencies = ["tfr>=0.1,<0.2"]
+
+[project.entry-points."tfr.plugins.v1"]
+cat = "tfr_plugins_public.cat:plugin"
+border_reflection = "tfr_plugins_public.border_reflection:plugin"
+film_burn = "tfr_plugins_public.film_burn:plugin"
+flame = "tfr_plugins_public.flame:plugin"
+marching_ants = "tfr_plugins_public.marching_ants:plugin"
+speaker_effects = "tfr_plugins_public.speaker_effects:plugin"
+terminal_reveal = "tfr_plugins_public.terminal_reveal:plugin"
+vortex = "tfr_plugins_public.vortex:plugin"
+water = "tfr_plugins_public.water:plugin"
+
+[build-system]
+requires = ["uv_build>=0.12.10,<0.13.0"]
+build-backend = "uv_build"
+
+[tool.uv.sources]
+tfr = { git = "https://github.com/blaag/tfr.git" }
+
+[dependency-groups]
+dev = [
+    "pytest>=9.1.1",
+    "pytest-asyncio>=1.4.0",
+    "ruff>=0.16.6",
+]
+
+[tool.pytest.ini_options]
+addopts = "-ra"
+asyncio_mode = "auto"
+testpaths = ["tests"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py312"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B", "SIM"]
