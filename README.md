@@ -8,6 +8,8 @@ Public, optional plugins for TFR. This distribution currently provides:
 - `flame`: burn visible output into drifting smoke when clearing the screen.
 - `marching_ants`: animate alternating cells around UI borders.
 - `speaker_effects`: apply configurable effects to attributed speaker names.
+  See [SPEAKER-EFFECTS.md](SPEAKER-EFFECTS.md) for every effect, what it
+  looks like, and its parameters.
 - `terminal_reveal`: reveal incoming lines through a glitching serial-terminal edge.
 - `vortex`: pull visible output into an expanding, center-out whirlpool.
 - `water`: turn visible characters into falling, sloshing, draining droplets.
@@ -83,6 +85,9 @@ Enable any installed entry-point names in the main TFR configuration:
       "frames_per_second": 24,
     },
     "speaker_effects": {
+      // Enabling with no rules (or omitting config entirely) is a safe
+      // no-op: it loads successfully and decorates nothing. See
+      // SPEAKER-EFFECTS.md for the full effect list and their parameters.
       "rules": [
         {
           "speaker": "Example Name",
@@ -117,17 +122,17 @@ Enable any installed entry-point names in the main TFR configuration:
       "turns": 2.25,
     },
     "water": {
-      "color_mode": "dynamic",
-      "drain_rate": 60,
-      "duration_seconds": 10,
+      "color_mode": "source",
+      "drain_rate": 45,
+      "duration_seconds": 5,
       "floor_restitution": 0.75,
-      "frames_per_second": 24,
-      "gravity": 9,
-      "pressure": 18,
-      "slosh_strength": 0.85,
-      "smoothing_radius": 1.45,
-      "surface_tension": 1.4,
-      "viscosity": 2.2,
+      "frames_per_second": 30,
+      "gravity": 12,
+      "pressure": 48,
+      "slosh_strength": 1.0,
+      "smoothing_radius": 1.4,
+      "surface_tension": 0.5,
+      "viscosity": 0.6,
     },
   },
 }
@@ -197,44 +202,28 @@ the final projection of the continuous simulation. Configure those forces with
 the changing center of mass. Bottom, left, and right outlets share the drain
 budget evenly, independent of slosh direction. `drain_rate` sets the baseline
 characters per second; dense snapshots raise that rate as needed to keep the
-effect within its bounded completion window. If particles remain at
-`duration_seconds`, they accelerate toward their assigned outlets and the
-transition continues until they finish draining. The effect preserves each
-character and its visible style when `color_mode` is `source`, which is the
-default. Set `color_mode` to `dynamic` to color slow particles deep blue, shift
-fast particles toward cyan, and brighten pressurized particles toward white.
+effect within its bounded completion window. `duration_seconds` (default `5`)
+is a target, not a hard cutoff: once it elapses, remaining particles accelerate
+toward their assigned outlets, and the transition continues rendering until
+every particle has actually drained. The effect preserves each character and
+its visible style when `color_mode` is `source`, which is the default. Set
+`color_mode` to `dynamic` to color slow particles deep blue, shift fast
+particles toward cyan, and brighten pressurized particles toward white.
 `floor_restitution` controls impact rebound from `0` through `1`; the default is
-`0.22`, while values around `0.7` produce visible splashes. Other source style
-attributes remain active in dynamic mode. `frames_per_second` must be between 1
-and 30.
+`0.75`, which produces a visible splash, while values near `0` barely rebound at
+all. Other source style attributes remain active in dynamic mode.
+`frames_per_second` must be between 1 and 30.
 
 `speaker_effects` decorates only the attributed speaker-name span of `SAY` and
 `POSE` events. Matching is case-insensitive. Rules can be restricted with
 `worlds` and `kinds`, use first-match precedence, and support looping or one-shot
 timing. The original event, logs, retained text, wrapping geometry, and copied
-text remain unchanged.
+text remain unchanged. Enabling this plugin with no `rules` configured (or no
+`speaker_effects` configuration at all) loads successfully and decorates
+nothing, so it is safe to include in a default enabled list.
 
-Available speaker effects are:
-
-- `shimmer`
-- `capitalization_roll`
-- `comet`
-- `sparkle`
-- `underline_sweep`
-- `bold_sweep`
-- `ember`
-- `frost`
-- `rainbow_wave`
-- `color_pulse`
-- `case_wave`
-- `reverse_sweep`
-- `age_decay`
-
-`shimmer` uses `period_seconds`; capitalization effects use `step_seconds`; the
-other effects use `duration_seconds`. `comet` accepts `trail_width`, `sparkle`
-accepts `sparkle_count`, and sweep, frost, and case-wave effects accept
-`wave_width`. Colors are interpolated in OKLab. `age_decay` derives a bright
-starting color and finishes at the exact configured `end_color`.
+See [SPEAKER-EFFECTS.md](SPEAKER-EFFECTS.md) for every available effect, what
+it looks like, and the parameters it accepts.
 
 `terminal_reveal` draws each incoming line progressively while a deterministic
 band of replacement glyphs flickers at the leading edge. It uses 20 baud units

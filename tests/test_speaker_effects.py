@@ -20,6 +20,17 @@ class FakeEntryPoint:
         return self.plugin
 
 
+class MemorySink:
+    def __init__(self) -> None:
+        self.events: list[Event] = []
+
+    async def write(self, event: Event) -> None:
+        self.events.append(event)
+
+    async def close(self) -> None:
+        pass
+
+
 def speech(
     text: str,
     *,
@@ -266,3 +277,45 @@ async def test_first_matching_rule_wins() -> None:
 
     assert len(decorations) == 1
     assert decorations[0].effect is TextEffectKind.SHIMMER
+
+
+async def test_missing_rules_loads_successfully_as_a_no_op() -> None:
+    from tfr_plugins_public.speaker_effects import plugin
+
+    sink = MemorySink()
+    plugins = await PluginManager.load(
+        enabled=("speaker_effects",),
+        config={"speaker_effects": {}},
+        event_bus=EventBus([sink]),
+        command_bus=CommandBus(),
+        targets={},
+        discovered=(FakeEntryPoint("speaker_effects", plugin),),
+        scope="ui",
+    )
+    event = speech("Alice says, hello", sender="Alice")
+
+    decorations = plugins.decorate_display(event, event.display_text or "")
+
+    assert decorations == ()
+    assert [item for item in sink.events if item.kind is EventKind.PLUGIN] == []
+
+
+async def test_empty_rules_list_loads_successfully_as_a_no_op() -> None:
+    from tfr_plugins_public.speaker_effects import plugin
+
+    sink = MemorySink()
+    plugins = await PluginManager.load(
+        enabled=("speaker_effects",),
+        config={"speaker_effects": {"rules": []}},
+        event_bus=EventBus([sink]),
+        command_bus=CommandBus(),
+        targets={},
+        discovered=(FakeEntryPoint("speaker_effects", plugin),),
+        scope="ui",
+    )
+    event = speech("Alice says, hello", sender="Alice")
+
+    decorations = plugins.decorate_display(event, event.display_text or "")
+
+    assert decorations == ()
+    assert [item for item in sink.events if item.kind is EventKind.PLUGIN] == []

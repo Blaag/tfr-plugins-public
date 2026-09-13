@@ -314,12 +314,14 @@ class SpeakerEffectsPlugin:
             raise PluginRegistrationError(
                 "unknown speaker_effects fields: " + ", ".join(sorted(unknown))
             )
-        rule_values = config.get("rules")
+        rule_values = config.get("rules", ())
         if isinstance(rule_values, str) or not isinstance(rule_values, Sequence):
             raise PluginRegistrationError("speaker_effects rules must be a list")
         rules = tuple(_parse_rule(value) for value in rule_values)
         if not rules:
-            raise PluginRegistrationError("speaker_effects requires at least one rule")
+            # No rules configured: load successfully but decorate nothing, so
+            # enabling this plugin without configuration is a harmless no-op.
+            return
 
         def decorate(event: Event, text: str) -> tuple[TextDecoration, ...]:
             decorations: list[TextDecoration] = []

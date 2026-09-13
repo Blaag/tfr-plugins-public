@@ -631,6 +631,26 @@ def test_plugin_registers_configured_sph_physics() -> None:
     assert registrar.effects[0].handler.floor_restitution == 0.7
 
 
+def test_plugin_registers_expected_default_sph_physics() -> None:
+    registrar = RecordingRegistrar()
+
+    plugin.register(registrar, {})
+
+    assert len(registrar.effects) == 1
+    effect = registrar.effects[0]
+    assert effect.duration_seconds == 5
+    assert effect.frames_per_second == 30
+    assert effect.handler.color_mode == "source"
+    assert effect.handler.drain_rate == 45
+    assert effect.handler.floor_restitution == 0.75
+    assert effect.handler.gravity == 12
+    assert effect.handler.pressure == 48
+    assert effect.handler.slosh_strength == 1.0
+    assert effect.handler.smoothing_radius == 1.4
+    assert effect.handler.surface_tension == 0.5
+    assert effect.handler.viscosity == 0.6
+
+
 @pytest.mark.parametrize(
     "config",
     [

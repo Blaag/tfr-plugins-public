@@ -603,7 +603,7 @@ class _WaterRenderer:
         smoothing_radius: float,
         slosh_strength: float,
         color_mode: str = "source",
-        floor_restitution: float = 0.22,
+        floor_restitution: float = 0.75,
     ) -> None:
         self.duration_seconds = duration_seconds
         self.frames_per_second = frames_per_second
@@ -685,17 +685,17 @@ class _WaterRenderer:
 def render_water(
     context: ScreenClearContext,
     *,
-    duration_seconds: float = 10.0,
-    frames_per_second: float = 24.0,
-    drain_rate: float = 60.0,
-    gravity: float = 9.0,
-    pressure: float = 18.0,
-    viscosity: float = 2.2,
-    surface_tension: float = 1.4,
-    smoothing_radius: float = 1.45,
-    slosh_strength: float = 0.85,
+    duration_seconds: float = 5.0,
+    frames_per_second: float = 30.0,
+    drain_rate: float = 45.0,
+    gravity: float = 12.0,
+    pressure: float = 48.0,
+    viscosity: float = 0.6,
+    surface_tension: float = 0.5,
+    smoothing_radius: float = 1.4,
+    slosh_strength: float = 1.0,
     color_mode: str = "source",
-    floor_restitution: float = 0.22,
+    floor_restitution: float = 0.75,
 ) -> list[tuple[str, str]]:
     return _WaterRenderer(
         duration_seconds=duration_seconds,
@@ -719,47 +719,43 @@ class WaterPlugin:
         unknown = set(config) - _FIELDS
         if unknown:
             raise PluginRegistrationError("unknown water fields: " + ", ".join(sorted(unknown)))
-        duration_seconds = _positive_number(
-            config.get("duration_seconds", 10.0), "duration_seconds"
-        )
+        duration_seconds = _positive_number(config.get("duration_seconds", 5.0), "duration_seconds")
         if duration_seconds > MAX_SCREEN_CLEAR_DURATION_SECONDS:
             raise PluginRegistrationError(
                 f"water duration_seconds cannot exceed {MAX_SCREEN_CLEAR_DURATION_SECONDS:g}"
             )
         frames_per_second = _positive_number(
-            config.get("frames_per_second", 24.0), "frames_per_second"
+            config.get("frames_per_second", 30.0), "frames_per_second"
         )
         if frames_per_second < 1:
             raise PluginRegistrationError("water frames_per_second cannot be less than 1")
         if frames_per_second > 30:
             raise PluginRegistrationError("water frames_per_second cannot exceed 30")
-        drain_rate = _positive_number(config.get("drain_rate", 60.0), "drain_rate")
+        drain_rate = _positive_number(config.get("drain_rate", 45.0), "drain_rate")
         if drain_rate > 10_000:
             raise PluginRegistrationError("water drain_rate cannot exceed 10000")
-        gravity = _positive_number(config.get("gravity", 9.0), "gravity")
+        gravity = _positive_number(config.get("gravity", 12.0), "gravity")
         if gravity > 50:
             raise PluginRegistrationError("water gravity cannot exceed 50")
-        pressure = _positive_number(config.get("pressure", 18.0), "pressure")
+        pressure = _positive_number(config.get("pressure", 48.0), "pressure")
         if pressure > 100:
             raise PluginRegistrationError("water pressure cannot exceed 100")
-        viscosity = _positive_number(config.get("viscosity", 2.2), "viscosity")
+        viscosity = _positive_number(config.get("viscosity", 0.6), "viscosity")
         if viscosity > 20:
             raise PluginRegistrationError("water viscosity cannot exceed 20")
-        surface_tension = _positive_number(config.get("surface_tension", 1.4), "surface_tension")
+        surface_tension = _positive_number(config.get("surface_tension", 0.5), "surface_tension")
         if surface_tension > 20:
             raise PluginRegistrationError("water surface_tension cannot exceed 20")
-        smoothing_radius = _positive_number(
-            config.get("smoothing_radius", 1.45), "smoothing_radius"
-        )
+        smoothing_radius = _positive_number(config.get("smoothing_radius", 1.4), "smoothing_radius")
         if not 0.75 <= smoothing_radius <= 3:
             raise PluginRegistrationError("water smoothing_radius must be between 0.75 and 3")
-        slosh_strength = _number(config.get("slosh_strength", 0.85), "slosh_strength")
+        slosh_strength = _number(config.get("slosh_strength", 1.0), "slosh_strength")
         if not 0 <= slosh_strength <= 1:
             raise PluginRegistrationError("water slosh_strength must be between 0 and 1")
         color_mode = config.get("color_mode", "source")
         if not isinstance(color_mode, str) or color_mode not in {"source", "dynamic"}:
             raise PluginRegistrationError("water color_mode must be source or dynamic")
-        floor_restitution = _number(config.get("floor_restitution", 0.22), "floor_restitution")
+        floor_restitution = _number(config.get("floor_restitution", 0.75), "floor_restitution")
         if not 0 <= floor_restitution <= 1:
             raise PluginRegistrationError("water floor_restitution must be between 0 and 1")
         renderer = _WaterRenderer(
