@@ -14,6 +14,19 @@ Public, optional plugins for TFR. This distribution currently provides:
 - `vortex`: pull visible output into an expanding, center-out whirlpool.
 - `water`: turn visible characters into falling, sloshing, draining droplets.
 
+## Boss Views
+
+This collection does not currently provide any boss views. Core TFR bundles the
+`tfr.boss` plugin, which supplies the `/boss` command and the dependable
+`build-dashboard` fallback view. It is always available and should not be added
+to `plugins.enabled`.
+
+Optional and experimental boss views may be added to this collection in the
+future. They complement the bundled fallback and use the same public boss-view
+plugin API. See TFR's [Boss Views reference](https://github.com/Blaag/tfr/blob/main/BOSS-VIEWS.md)
+for view selection, configuration, registration, render context, operational
+events, and safety limits.
+
 Plugins are trusted Python code and run with TFR's process privileges.
 
 The simplest way to use this collection is to add it to `plugins.sources` in
