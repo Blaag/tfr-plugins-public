@@ -1,0 +1,111 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - "v[0-9]+.[0-9]+.[0-9]+"
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Verify annotated release tag and commit
+        shell: bash
+        run: |
+          tag_object="$(git rev-parse "refs/tags/$GITHUB_REF_NAME")"
+          test "$(git cat-file -t "$tag_object")" = tag
+          target="$(git cat-file tag "$tag_object" | {
+            IFS=' ' read -r header value
+            test "$header" = object
+            printf '%s\n' "$value"
+          })"
+          test "$(git cat-file -t "$target")" = commit
+          test "$target" = "$GITHUB_SHA"
+          git merge-base --is-ancestor "$GITHUB_SHA" origin/main
+      - uses: astral-sh/setup-uv@94527f2e458b27549849d47d273a16bec83a01e9 # v7
+        with:
+          enable-cache: true
+      - run: uv sync --frozen
+      - run: uv run ruff check .
+      - run: uv run pytest -q
+      - run: uv build
+      - name: Build plugin manifest
+        shell: bash
+        run: |
+          wheels=(dist/*.whl)
+          test "${#wheels[@]}" -eq 1
+          uv run python scripts/build_plugin_manifest.py \
+            --repository "$GITHUB_REPOSITORY" \
+            --tag "$GITHUB_REF_NAME" \
+            --commit "$GITHUB_SHA" \
+            --artifact "${wheels[0]}"
+      - name: Transfer release assets
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
+        with:
+          name: release-assets
+          path: |
+            dist/*
+            plugin-manifest.json
+          if-no-files-found: error
+          retention-days: 1
+
+  publish:
+    needs: build
+    runs-on: ubuntu-latest
+    environment: release
+    concurrency:
+      group: stable-plugin-release-publish
+      cancel-in-progress: false
+    permissions:
+      contents: write
+    steps:
+      - name: Download release assets
+        uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131 # v7
+        with:
+          name: release-assets
+          path: release-assets
+      - name: Verify tag still directly identifies this workflow commit
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          object="$(gh api "repos/$GITHUB_REPOSITORY/git/ref/tags/$GITHUB_REF_NAME")"
+          test "$(jq -r .object.type <<<"$object")" = tag
+          tag_sha="$(jq -r .object.sha <<<"$object")"
+          object="$(gh api "repos/$GITHUB_REPOSITORY/git/tags/$tag_sha")"
+          test "$(jq -r .object.type <<<"$object")" = commit
+          test "$(jq -r .object.sha <<<"$object")" = "$GITHUB_SHA"
+      - name: Verify release commit remains on main
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          status="$(gh api "repos/$GITHUB_REPOSITORY/compare/$GITHUB_SHA...main" --jq .status)"
+          test "$status" = ahead || test "$status" = identical
+      - name: Verify stable version is newest
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          stable_refs="$(gh api --paginate \
+            "repos/$GITHUB_REPOSITORY/git/matching-refs/tags/v" --jq '.[].ref')"
+          STABLE_REFS="$stable_refs" python3 - <<'PY'
+          import os
+          import re
+          pattern = re.compile(r"refs/tags/v(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)")
+          candidate = tuple(int(part) for part in os.environ["GITHUB_REF_NAME"][1:].split("."))
+          versions = [tuple(int(part) for part in match.groups()) for ref in os.environ["STABLE_REFS"].splitlines() if (match := pattern.fullmatch(ref))]
+          if not versions or candidate != max(versions):
+              raise SystemExit("release version is not the newest stable tag")
+          PY
+      - name: Publish immutable release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: >-
+          gh release create "$GITHUB_REF_NAME"
+          release-assets/dist/* release-assets/plugin-manifest.json
+          --repo "$GITHUB_REPOSITORY" --verify-tag --generate-notes

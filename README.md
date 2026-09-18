@@ -29,20 +29,34 @@ events, and safety limits.
 
 Plugins are trusted Python code and run with TFR's process privileges.
 
-The simplest way to use this collection is to add it to `plugins.sources` in
-your TFR `config.jsonc` so TFR clones it directly:
+## Stable Releases
+
+Stable releases use immutable annotated semantic-version tags and include a
+strict `plugin-manifest.json`. The manifest binds the release version to its
+exact Git commit, wheel digest, exported plugin names, supported TFR versions,
+and plugin API range. Compatible TFR versions can consume this channel with a
+`stable-auto` or `stable-notify` source policy; `pinned` sources select an exact
+40-character commit. Stable policies never fall back to the mutable `main`
+branch. See [SECURITY.md](SECURITY.md) for the trust boundary and
+[MAINTAINER.md](MAINTAINER.md) for the publication process.
+
+The recommended installation uses this repository's immutable stable channel:
 
 ```jsonc
 "plugins": {
   "enabled": ["cat", "border_reflection", "film_burn"],
   "sources": [
-    { "repo": "blaag/tfr-plugins-public" },
+    {
+      "repo": "Blaag/tfr-plugins-public",
+      "policy": "stable-auto",
+      "manifest_url": "https://github.com/Blaag/tfr-plugins-public/releases/latest/download/plugin-manifest.json",
+    },
   ],
 }
 ```
 
-See the TFR README's "Installing Plugins From a GitHub Repository" section for
-`ref`/`auto_update`/`path` options and the trust model. Alternatively, install
+See the TFR README's plugin source section for `stable-notify`, exact
+commit pins, rollback, and legacy development options. Alternatively, install
 this distribution as an ordinary package in the same environment as a
 compatible TFR installation and enable entry-point names under
 `plugins.enabled`; TFR discovers plugins from their `tfr.plugins.v1` package
