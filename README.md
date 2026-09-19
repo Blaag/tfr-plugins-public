@@ -6,7 +6,6 @@ Public, optional plugins for TFR. This distribution currently provides:
 - `border_reflection`: periodically reflect a highlight around UI borders.
 - `film_burn`: open irregular projector-burn holes through visible output.
 - `flame`: burn visible output into drifting smoke when clearing the screen.
-- `marching_ants`: animate alternating cells around UI borders.
 - `speaker_effects`: apply configurable effects to attributed speaker names.
   See [SPEAKER-EFFECTS.md](SPEAKER-EFFECTS.md) for every effect, what it
   looks like, and its parameters.
@@ -88,7 +87,7 @@ Enable any installed entry-point names in the main TFR configuration:
 
 ```jsonc
 "plugins": {
-  "enabled": ["cat", "border_reflection", "film_burn", "flame", "marching_ants", "speaker_effects", "terminal_reveal", "vortex", "water"],
+  "enabled": ["cat", "border_reflection", "film_burn", "flame", "speaker_effects", "terminal_reveal", "vortex", "water"],
   "config": {
     "cat": {},
     "border_reflection": {
@@ -171,9 +170,6 @@ Enable any installed entry-point names in the main TFR configuration:
 `/cat PATH`. It preserves spaces and tabs, applies server-specific softcode
 escaping, preflights the complete file, sends the first line immediately, and
 paces later lines.
-
-`marching_ants` animates alternating cells clockwise around both UI borders.
-Configure `frames_per_second` to a value greater than zero and at most 30.
 
 `border_reflection` runs a synchronized reflection over both visible pane
 borders. Its configurable values are `duration_seconds`, `frames_per_second`,

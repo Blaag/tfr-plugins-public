@@ -66,7 +66,7 @@ def test_manifest_records_compatibility_plugins_and_artifact(tmp_path: Path, mon
 
     manifest = MODULE.build_manifest(
         repository="Blaag/tfr-plugins-public",
-        tag="v0.1.0",
+        tag="v0.1.1",
         commit="a" * 40,
         artifact=artifact,
     )
@@ -83,7 +83,6 @@ def test_manifest_records_compatibility_plugins_and_artifact(tmp_path: Path, mon
             "border_reflection",
             "film_burn",
             "flame",
-            "marching_ants",
             "speaker_effects",
             "terminal_reveal",
             "vortex",
@@ -95,7 +94,7 @@ def test_manifest_records_compatibility_plugins_and_artifact(tmp_path: Path, mon
 
 @pytest.mark.parametrize(
     ("tag", "commit", "message"),
-    [("v0.1.1", "a" * 40, "does not match"), ("v0.1.0", "abc", "full hexadecimal")],
+    [("v0.1.2", "a" * 40, "does not match"), ("v0.1.1", "abc", "full hexadecimal")],
 )
 def test_manifest_rejects_inconsistent_identity(
     tmp_path: Path, monkeypatch, tag: str, commit: str, message: str

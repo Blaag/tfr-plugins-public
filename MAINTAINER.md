@@ -4,7 +4,7 @@
 
 Stable releases are immutable, annotated Git tags named `vMAJOR.MINOR.PATCH`.
 The project version, TFR compatibility range, plugin API range, and exported
-entry-point names are authoritative in `pyproject.toml`.
+entry-point names are authoritative in [pyproject.toml](pyproject.toml).
 
 1. Update `project.version` and compatibility metadata as needed.
 2. Run `uv lock`, `uv sync --frozen`, `uv run ruff check .`, `uv run pytest -q`, and `uv build`.
