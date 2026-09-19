@@ -1,6 +1,6 @@
 [project]
 name = "tfr-plugins-public"
-version = "0.1.1"
+version = "0.1.2"
 description = "Public plugin collection for TFR"
 readme = "README.md"
 license = "MIT"

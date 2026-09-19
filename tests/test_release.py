@@ -4,18 +4,27 @@ import hashlib
 import importlib.util
 import shutil
 import subprocess
+import tomllib
 from pathlib import Path
 
 import pytest
 
 ROOT = Path(__file__).parents[1]
 PUBLISH_SCRIPT = ROOT / "scripts" / "publish-release"
+PROJECT_VERSION = tomllib.loads((ROOT / "pyproject.toml").read_text(encoding="utf-8"))[
+    "project"
+]["version"]
 SPEC = importlib.util.spec_from_file_location(
     "build_plugin_manifest", ROOT / "scripts" / "build_plugin_manifest.py"
 )
 assert SPEC is not None and SPEC.loader is not None
 MODULE = importlib.util.module_from_spec(SPEC)
 SPEC.loader.exec_module(MODULE)
+
+
+def next_patch_version(version: str) -> str:
+    major, minor, patch = (int(part) for part in version.split("."))
+    return f"{major}.{minor}.{patch + 1}"
 
 
 def git(repository: Path, *arguments: str) -> subprocess.CompletedProcess[str]:
@@ -66,7 +75,7 @@ def test_manifest_records_compatibility_plugins_and_artifact(tmp_path: Path, mon
 
     manifest = MODULE.build_manifest(
         repository="Blaag/tfr-plugins-public",
-        tag="v0.1.1",
+        tag=f"v{PROJECT_VERSION}",
         commit="a" * 40,
         artifact=artifact,
     )
@@ -94,7 +103,10 @@ def test_manifest_records_compatibility_plugins_and_artifact(tmp_path: Path, mon
 
 @pytest.mark.parametrize(
     ("tag", "commit", "message"),
-    [("v0.1.2", "a" * 40, "does not match"), ("v0.1.1", "abc", "full hexadecimal")],
+    [
+        (f"v{next_patch_version(PROJECT_VERSION)}", "a" * 40, "does not match"),
+        (f"v{PROJECT_VERSION}", "abc", "full hexadecimal"),
+    ],
 )
 def test_manifest_rejects_inconsistent_identity(
     tmp_path: Path, monkeypatch, tag: str, commit: str, message: str
