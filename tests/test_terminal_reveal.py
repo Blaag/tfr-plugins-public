@@ -55,7 +55,7 @@ async def load(config: dict[str, object]) -> PluginManager:
     )
 
 
-async def test_default_configuration_models_9600_baud_serial_text() -> None:
+async def test_default_configuration_models_1200_baud_serial_text() -> None:
     manager = await load({})
     incoming = event("\x1b[1mhello\x1b[0m\n")
 
@@ -64,7 +64,7 @@ async def test_default_configuration_models_9600_baud_serial_text() -> None:
     assert decoration.effect is TextEffectKind.TERMINAL_REVEAL
     assert decoration.start == 0
     assert decoration.end == 5
-    assert 9600 * 0.75 <= 20 / decoration.interval_seconds <= 9600 * 1.25
+    assert 1200 * 0.75 <= 20 / decoration.interval_seconds <= 1200 * 1.25
     assert decoration.frames_per_second == 30
     assert decoration.effect_width == 3
     assert decoration.settle_width == 3
@@ -72,7 +72,7 @@ async def test_default_configuration_models_9600_baud_serial_text() -> None:
     assert decoration.accent_color == "#ffffff"
     assert decoration.base_color == "#d7d7d7"
     assert decoration.seed == 7
-    assert decoration.inline_glitch_chance == 0.05
+    assert decoration.inline_glitch_chance == 0.35
 
 
 async def test_each_line_gets_a_stable_speed_within_the_configured_variation() -> None:

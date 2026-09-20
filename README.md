@@ -2,16 +2,21 @@
 
 Public, optional plugins for TFR. This distribution currently provides:
 
+- `acid_rain`: dissolve visible output under falling corrosive streaks.
 - `cat`: send a UTF-8 file as paced `@emit` lines.
 - `border_reflection`: periodically reflect a highlight around UI borders.
+- `doom_fire`: consume visible output with a bottom-fed cellular fire simulation.
 - `film_burn`: open irregular projector-burn holes through visible output.
 - `flame`: burn visible output into drifting smoke when clearing the screen.
+- `gag`: hide inbound lines matching world-local regular expressions.
+- `sandstorm`: break visible output into wind-driven earth-tone particles.
 - `speaker_effects`: apply configurable effects to attributed speaker names.
   See [SPEAKER-EFFECTS.md](SPEAKER-EFFECTS.md) for every effect, what it
   looks like, and its parameters.
 - `terminal_reveal`: reveal incoming lines through a glitching serial-terminal edge.
 - `vortex`: pull visible output into an expanding, center-out whirlpool.
 - `water`: turn visible characters into falling, sloshing, draining droplets.
+- `water_ripple`: dissolve visible output in expanding density-glyph rings.
 
 ## Boss Views
 
@@ -87,8 +92,28 @@ Enable any installed entry-point names in the main TFR configuration:
 
 ```jsonc
 "plugins": {
-  "enabled": ["cat", "border_reflection", "film_burn", "flame", "speaker_effects", "terminal_reveal", "vortex", "water"],
+  "enabled": [
+    "acid_rain",
+    "cat",
+    "border_reflection",
+    "doom_fire",
+    "film_burn",
+    "flame",
+    "gag",
+    "sandstorm",
+    "speaker_effects",
+    "terminal_reveal",
+    "vortex",
+    "water",
+    "water_ripple",
+  ],
   "config": {
+    "acid_rain": {
+      "density": 0.32,
+      "duration_seconds": 3,
+      "frames_per_second": 24,
+      "streak_length": 4,
+    },
     "cat": {},
     "border_reflection": {
       "duration_seconds": 1.2,
@@ -96,6 +121,10 @@ Enable any installed entry-point names in the main TFR configuration:
       "gradient_cells": 8,
       "minimum_interval_seconds": 30,
       "maximum_interval_seconds": 120,
+    },
+    "doom_fire": {
+      "duration_seconds": 3.2,
+      "frames_per_second": 24,
     },
     "flame": {
       "duration_seconds": 2.1,
@@ -109,6 +138,20 @@ Enable any installed entry-point names in the main TFR configuration:
       "maximum_growth_duration_seconds": 6,
       "burn_duration_seconds": 0.7,
       "frames_per_second": 24,
+    },
+    "gag": {
+      "worlds": {
+        "example-world": [
+          "^A noisy line$",
+          "repeated message \\d+",
+        ],
+      },
+    },
+    "sandstorm": {
+      "direction": "left-to-right",
+      "duration_seconds": 2.8,
+      "frames_per_second": 24,
+      "gust_strength": 1.4,
     },
     "speaker_effects": {
       // Enabling with no rules (or omitting config entirely) is a safe
@@ -128,12 +171,12 @@ Enable any installed entry-point names in the main TFR configuration:
       ],
     },
     "terminal_reveal": {
-      "baud_rate": 9600,
+      "baud_rate": 1200,
       "frames_per_second": 30,
       "glitch_width": 3,
       "settle_width": 3,
       "speed_variation": 0.25,
-      "inline_glitch_chance": 0.05,
+      "inline_glitch_chance": 0.35,
       "glitch_characters": "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789!\"#$%&'()*+,-./:;<=>?@[\\]^_`{|}~",
       "glitch_color": "#ffffff",
       "trail_color": "#d7d7d7",
@@ -160,6 +203,10 @@ Enable any installed entry-point names in the main TFR configuration:
       "surface_tension": 0.5,
       "viscosity": 0.6,
     },
+    "water_ripple": {
+      "duration_seconds": 2.6,
+      "frames_per_second": 24,
+    },
   },
 }
 ```
@@ -171,9 +218,24 @@ Enable any installed entry-point names in the main TFR configuration:
 escaping, preflights the complete file, sends the first line immediately, and
 paces later lines.
 
+`gag` suppresses matching inbound lines from the active world's display while
+leaving their canonical events available to logging and replay. Expressions are
+persistent configuration under `plugins.config.gag.worlds`, keyed by exact world
+alias. Use `/gag` or `/gag list` to display the active world's configured
+expressions. Each world may have up to 100 expressions of 1,000 characters each.
+Matching has a 10-millisecond per-line budget and fails open if that budget is
+exhausted, so an expensive expression cannot stall inbound display processing.
+
 `border_reflection` runs a synchronized reflection over both visible pane
 borders. Its configurable values are `duration_seconds`, `frames_per_second`,
 `gradient_cells`, `minimum_interval_seconds`, and `maximum_interval_seconds`.
+
+`acid_rain` sends seeded neon-green streaks down empty regions while a staggered
+contact front corrodes text from top to bottom. Touched characters pass through
+bright acid, olive decay, brown residue, and disappearance stages. `density`
+ranges from `0` to `1` and controls how many visible rain columns are active;
+`streak_length` is an integer from `1` through `12`. `duration_seconds` must be
+positive and no greater than 60, and `frames_per_second` must be between 1 and 30.
 
 `film_burn` opens several seeded, irregular holes through the visible output.
 One hole ignites immediately; the remaining holes appear randomly before the
@@ -202,6 +264,21 @@ fire, smoke, and ash animation of the visible output. `duration_seconds` must be
 a positive number no greater than 10. `frames_per_second` must be positive and
 no greater than 30. Both fields are optional, and unknown configuration fields
 are rejected.
+
+`doom_fire` is a separate bottom-fed cellular simulation inspired by the classic
+fire effect. A seeded heat row flickers below the pane, intensity propagates
+upward with lateral variation and cooling, and touched cells stay consumed after
+the flame has moved on. Its glyph and color ramp runs from dark-red embers through
+orange and gold to a white-hot peak. `duration_seconds` must be positive and no
+greater than 60; `frames_per_second` must be between 1 and 30.
+
+`sandstorm` advances a softened wind front across the pane, breaks non-whitespace
+characters into seeded dust particles, and drives them offscreen with turbulent
+vertical drift. Source styles remain intact until each character is entrained.
+Set `direction` to `left-to-right` or `right-to-left`; `gust_strength` ranges
+from `0` for straight-line travel through `4` for strong turbulence.
+`duration_seconds` must be positive and no greater than 60, and
+`frames_per_second` must be between 1 and 30.
 
 `vortex` starts at the center and expands outward, pulling each character
 gradually into a tightening circular orbit until it disappears into the center.
@@ -237,6 +314,13 @@ particles toward cyan, and brighten pressurized particles toward white.
 all. Other source style attributes remain active in dynamic mode.
 `frames_per_second` must be between 1 and 30.
 
+`water_ripple` begins at the pane center and expands outward using terminal-cell
+aspect-corrected distance. Each contacted character flashes at the wavefront,
+then steps through solid, dark, medium, and light density glyphs before
+disappearing. This is a geometric dissolution rather than the falling SPH fluid
+simulation provided by `water`. `duration_seconds` must be positive and no
+greater than 60, and `frames_per_second` must be between 1 and 30.
+
 `speaker_effects` decorates only the attributed speaker-name span of `SAY` and
 `POSE` events. Matching is case-insensitive. Rules can be restricted with
 `worlds` and `kinds`, use first-match precedence, and support looping or one-shot
@@ -251,10 +335,11 @@ it looks like, and the parameters it accepts.
 `terminal_reveal` draws each incoming line progressively while a deterministic
 band of replacement glyphs flickers at the leading edge. It uses 20 baud units
 per rendered character, intentionally half the speed of raw ten-bit serial
-framing; 300 baud therefore displays about 15 characters per second. Rendering
-is capped by `frames_per_second`, which must not exceed 30. Each line gets a
-stable deterministic speed adjustment within `speed_variation`; the default
-`0.25` varies effective line speed from 75% to 125% of the configured baud rate.
+framing; 300 baud therefore displays about 15 characters per second, and the
+default is 1200 baud. Rendering is capped by `frames_per_second`, which must not
+exceed 30. Each line gets a stable deterministic speed adjustment within
+`speed_variation`; the default `0.25` varies effective line speed from 75% to
+125% of the configured baud rate.
 
 Use `glitch_width`, `glitch_characters`, and `glitch_color` to control the edge.
 The three newest cells glitch in white by default; `settle_width` controls the
@@ -266,7 +351,7 @@ keyboard; whitespace and control characters remain prohibited.
 While a line is filling, `inline_glitch_chance` selects character positions for
 one additional in-place glitch and fade pulse. Selection and timing are stable
 for replay, and no inline pulses occur after the line has filled. The default
-chance is `0.05`; use `0` to disable inline glitches.
+chance is `0.35`; use `0` to disable inline glitches.
 Optional `worlds` and `kinds` lists restrict which incoming events are affected.
 Lines longer than `maximum_characters` are shown immediately, and long eligible
 lines accelerate as needed to finish within `maximum_duration_seconds`; their

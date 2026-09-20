@@ -1,22 +1,27 @@
 [project]
 name = "tfr-plugins-public"
-version = "0.1.2"
+version = "0.1.3"
 description = "Public plugin collection for TFR"
 readme = "README.md"
 license = "MIT"
 license-files = ["LICENSE"]
 requires-python = ">=3.12"
-dependencies = ["tfr>=0.1.1,<0.2"]
+dependencies = ["regex>=2024.11.6", "tfr>=0.1.1,<0.2"]
 
 [project.entry-points."tfr.plugins.v1"]
+acid_rain = "tfr_plugins_public.acid_rain:plugin"
 cat = "tfr_plugins_public.cat:plugin"
 border_reflection = "tfr_plugins_public.border_reflection:plugin"
+doom_fire = "tfr_plugins_public.doom_fire:plugin"
 film_burn = "tfr_plugins_public.film_burn:plugin"
 flame = "tfr_plugins_public.flame:plugin"
+gag = "tfr_plugins_public.gag:plugin"
+sandstorm = "tfr_plugins_public.sandstorm:plugin"
 speaker_effects = "tfr_plugins_public.speaker_effects:plugin"
 terminal_reveal = "tfr_plugins_public.terminal_reveal:plugin"
 vortex = "tfr_plugins_public.vortex:plugin"
 water = "tfr_plugins_public.water:plugin"
+water_ripple = "tfr_plugins_public.water_ripple:plugin"
 
 [build-system]
 requires = ["uv_build==0.12.15"]
