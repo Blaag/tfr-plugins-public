@@ -88,14 +88,19 @@ def test_manifest_records_compatibility_plugins_and_artifact(tmp_path: Path, mon
     }
     assert manifest["plugins"] == sorted(
         [
+            "acid_rain",
             "cat",
             "border_reflection",
+            "doom_fire",
             "film_burn",
             "flame",
+            "gag",
+            "sandstorm",
             "speaker_effects",
             "terminal_reveal",
             "vortex",
             "water",
+            "water_ripple",
         ]
     )
     assert manifest["artifact"]["sha256"] == hashlib.sha256(b"wheel").hexdigest()
