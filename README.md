@@ -66,6 +66,23 @@ compatible TFR installation and enable entry-point names under
 `plugins.enabled`; TFR discovers plugins from their `tfr.plugins.v1` package
 entry points either way.
 
+To update a configured `stable-auto` or `stable-notify` source immediately
+instead of waiting for the next TFR restart, run this from a repository
+checkout:
+
+```sh
+./scripts/install-from-checkout
+```
+
+The installer uses the active managed TFR interpreter, reads the normal TFR
+configuration, verifies the live stable manifest and annotated release tag,
+and activates the exact release in `plugins.state_directory`. Restart TFR to
+load it. If TFR uses a non-default managed root, set `TFR_MANAGED_ROOT`; for a
+non-managed installation, set `TFR_PYTHON` to a virtual-environment or system
+Python that can import TFR in isolated mode. Use `--config PATH` for a
+non-default TFR configuration. The manual updater intentionally accepts only
+the official public-plugin repository and stable manifest.
+
 This project is distributed under the [MIT License](LICENSE).
 
 ## Development Installation
