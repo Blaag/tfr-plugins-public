@@ -9,7 +9,11 @@ into the overall `speaker_effects` configuration.
 
 `speaker_effects` decorates only the attributed speaker-name span of `SAY`
 and `POSE` events — not mentions of that name elsewhere in a line, and not
-lines misattributed to a different sender. Matching is case-insensitive.
+lines misattributed to a different sender. When a server adapter attributes the
+sender but cannot distinguish a pose and reports `RAW_OUTPUT` or ambiguous
+`SPEECH`, a rule that includes `pose` may infer it from the matching speaker
+name at the start of the line. Unattributed and say-shaped output is not inferred
+as a pose. Matching is case-insensitive.
 
 Each rule is an object with at least `speaker` and `effect`. Rules are
 checked in order; the first rule whose `speaker` (and optional `worlds`,

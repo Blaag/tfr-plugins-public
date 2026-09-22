@@ -104,6 +104,60 @@ async def test_rules_match_attributed_speakers_case_insensitively() -> None:
     assert carol_decorations[0].effect is TextEffectKind.CAPITALIZATION_ROLL
 
 
+async def test_pose_rules_infer_configured_speakers_from_unclassified_output() -> None:
+    plugins = await manager()
+    raw_pose = speech("Alice waves.", kind=EventKind.RAW_OUTPUT, sender="ALICE")
+    ambiguous_pose = speech("Carol smiles.", kind=EventKind.SPEECH, sender="CAROL")
+
+    raw_decorations = plugins.decorate_display(raw_pose, raw_pose.display_text or "")
+    ambiguous_decorations = plugins.decorate_display(
+        ambiguous_pose,
+        ambiguous_pose.display_text or "",
+    )
+
+    assert raw_decorations[0].effect is TextEffectKind.SHIMMER
+    assert ambiguous_decorations[0].effect is TextEffectKind.CAPITALIZATION_ROLL
+
+
+async def test_inferred_poses_still_reject_mentions_and_say_only_rules() -> None:
+    plugins = await manager()
+    mention = speech("Someone waves to Alice.", kind=EventKind.RAW_OUTPUT, sender="Alice")
+    unattributed = speech("Alice waves.", kind=EventKind.RAW_OUTPUT)
+    misattributed = speech("Alice waves.", kind=EventKind.RAW_OUTPUT, sender="Someone")
+    say_shaped = speech("Alice says, hello", kind=EventKind.RAW_OUTPUT, sender="Alice")
+
+    assert plugins.decorate_display(mention, mention.display_text or "") == ()
+    assert plugins.decorate_display(unattributed, unattributed.display_text or "") == ()
+    assert plugins.decorate_display(misattributed, misattributed.display_text or "") == ()
+    assert plugins.decorate_display(say_shaped, say_shaped.display_text or "") == ()
+
+    from tfr_plugins_public.speaker_effects import plugin
+
+    say_only = await PluginManager.load(
+        enabled=("speaker_effects",),
+        config={
+            "speaker_effects": {
+                "rules": [
+                    {
+                        "speaker": "Alice",
+                        "effect": "shimmer",
+                        "color": "#d70000",
+                        "kinds": ["say"],
+                    }
+                ]
+            }
+        },
+        event_bus=EventBus(),
+        command_bus=CommandBus(),
+        targets={},
+        discovered=(FakeEntryPoint("speaker_effects", plugin),),
+        scope="ui",
+    )
+    raw_pose = speech("Alice waves.", kind=EventKind.RAW_OUTPUT, sender="Alice")
+
+    assert say_only.decorate_display(raw_pose, raw_pose.display_text or "") == ()
+
+
 async def test_rules_do_not_match_mentions_or_misattributed_names() -> None:
     plugins = await manager()
 
