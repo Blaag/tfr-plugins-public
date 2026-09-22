@@ -287,7 +287,13 @@ def _parse_rule(value: object) -> SpeakerRule:
     )
 
 
-def _speaker_span(event: Event, text: str, speaker: str) -> tuple[int, int] | None:
+def _speaker_span(
+    event: Event,
+    text: str,
+    speaker: str,
+    *,
+    inferred_pose: bool = False,
+) -> tuple[int, int] | None:
     plain = terminal_plain_text(text)
     prefix_end = plain.find("] ") if plain.startswith("[") else -1
     start = prefix_end + 2 if prefix_end >= 0 else 0
@@ -298,10 +304,13 @@ def _speaker_span(event: Event, text: str, speaker: str) -> tuple[int, int] | No
         return None
     if end < len(plain) and (plain[end].isalnum() or plain[end] == "_"):
         return None
+    remainder = plain[end:].lstrip()
+    say_prefix = re.match(r"says?,", remainder, re.IGNORECASE)
     if event.kind is EventKind.SAY:
-        remainder = plain[end:].lstrip()
-        if re.match(r"says?,", remainder, re.IGNORECASE) is None:
+        if say_prefix is None:
             return None
+    elif inferred_pose and say_prefix is not None:
+        return None
     return start, end
 
 
@@ -327,13 +336,19 @@ class SpeakerEffectsPlugin:
             decorations: list[TextDecoration] = []
             sender = event.provenance.sender_name if event.provenance is not None else None
             for rule in rules:
-                if event.kind not in rule.kinds:
+                inferred_pose = (
+                    EventKind.POSE in rule.kinds
+                    and event.kind in {EventKind.RAW_OUTPUT, EventKind.SPEECH}
+                    and sender is not None
+                    and sender.casefold() == rule.speaker.casefold()
+                )
+                if event.kind not in rule.kinds and not inferred_pose:
                     continue
                 if rule.worlds is not None and event.world.casefold() not in rule.worlds:
                     continue
                 if sender is not None and sender.casefold() != rule.speaker.casefold():
                     continue
-                span = _speaker_span(event, text, rule.speaker)
+                span = _speaker_span(event, text, rule.speaker, inferred_pose=inferred_pose)
                 if span is None:
                     continue
                 decorations.append(rule.decoration(event, *span))

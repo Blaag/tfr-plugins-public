@@ -339,12 +339,14 @@ simulation provided by `water`. `duration_seconds` must be positive and no
 greater than 60, and `frames_per_second` must be between 1 and 30.
 
 `speaker_effects` decorates only the attributed speaker-name span of `SAY` and
-`POSE` events. Matching is case-insensitive. Rules can be restricted with
-`worlds` and `kinds`, use first-match precedence, and support looping or one-shot
-timing. The original event, logs, retained text, wrapping geometry, and copied
-text remain unchanged. Enabling this plugin with no `rules` configured (or no
-`speaker_effects` configuration at all) loads successfully and decorates
-nothing, so it is safe to include in a default enabled list.
+`POSE` events, including attributed `RAW_OUTPUT` or ambiguous `SPEECH` that a
+pose-enabled rule can safely identify as a pose. Matching is case-insensitive.
+Rules can be restricted with `worlds` and `kinds`, use first-match precedence,
+and support looping or one-shot timing. The original event, logs, retained text,
+wrapping geometry, and copied text remain unchanged. Enabling this plugin with
+no `rules` configured (or no `speaker_effects` configuration at all) loads
+successfully and decorates nothing, so it is safe to include in a default
+enabled list.
 
 See [SPEAKER-EFFECTS.md](SPEAKER-EFFECTS.md) for every available effect, what
 it looks like, and the parameters it accepts.
