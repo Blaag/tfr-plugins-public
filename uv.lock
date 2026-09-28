@@ -1094,7 +1094,7 @@ wheels = [
 [[package]]
 name = "tfr"
 version = "0.1.16"
-source = { git = "https://github.com/blaag/tfr.git?rev=c2346cdfb81a47f07942d6e0b91835e6479bd403#c2346cdfb81a47f07942d6e0b91835e6479bd403" }
+source = { git = "https://github.com/blaag/tfr.git?rev=0c540f4b1d0281b64b0065f14b0c3efd6442ae1e#0c540f4b1d0281b64b0065f14b0c3efd6442ae1e" }
 dependencies = [
     { name = "aiohttp" },
     { name = "json-with-comments" },
@@ -1129,7 +1129,7 @@ dev = [
 [package.metadata]
 requires-dist = [
     { name = "regex", specifier = ">=2024.11.6" },
-    { name = "tfr", git = "https://github.com/blaag/tfr.git?rev=c2346cdfb81a47f07942d6e0b91835e6479bd403" },
+    { name = "tfr", git = "https://github.com/blaag/tfr.git?rev=0c540f4b1d0281b64b0065f14b0c3efd6442ae1e" },
 ]
 
 [package.metadata.requires-dev]

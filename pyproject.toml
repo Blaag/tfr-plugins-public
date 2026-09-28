@@ -34,7 +34,7 @@ plugin-api-minimum = 1
 plugin-api-maximum = 1
 
 [tool.uv.sources]
-tfr = { git = "https://github.com/blaag/tfr.git", rev = "c2346cdfb81a47f07942d6e0b91835e6479bd403" }
+tfr = { git = "https://github.com/blaag/tfr.git", rev = "0c540f4b1d0281b64b0065f14b0c3efd6442ae1e" }
 
 [dependency-groups]
 build = [
