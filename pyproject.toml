@@ -1,12 +1,12 @@
 [project]
 name = "tfr-plugins-public"
-version = "0.1.5"
+version = "0.1.6"
 description = "Public plugin collection for TFR"
 readme = "README.md"
 license = "MIT"
 license-files = ["LICENSE"]
 requires-python = ">=3.12"
-dependencies = ["regex>=2024.11.6", "tfr>=0.1.1,<0.2"]
+dependencies = ["regex>=2024.11.6", "tfr>=0.1.17,<0.2"]
 
 [project.entry-points."tfr.plugins.v1"]
 acid_rain = "tfr_plugins_public.acid_rain:plugin"
@@ -28,13 +28,13 @@ requires = ["uv_build==0.12.15"]
 build-backend = "uv_build"
 
 [tool.tfr-release]
-tfr-minimum = "0.1.1"
+tfr-minimum = "0.1.17"
 tfr-maximum-exclusive = "0.2.0"
 plugin-api-minimum = 1
 plugin-api-maximum = 1
 
 [tool.uv.sources]
-tfr = { git = "https://github.com/blaag/tfr.git", rev = "0c540f4b1d0281b64b0065f14b0c3efd6442ae1e" }
+tfr = { git = "https://github.com/blaag/tfr.git" }
 
 [dependency-groups]
 build = [
