@@ -7,6 +7,7 @@ from uuid import UUID
 import pytest
 from tfr.core import CommandBus, EventBus
 from tfr.events import Direction, Event, EventKind, Provenance
+from tfr.gateway_web import browser_event
 from tfr.plugins import PluginManager
 from tfr.presentation import PresentationStyle
 from tfr.text_effects import TextEffectKind
@@ -430,6 +431,44 @@ async def test_non_looping_color_pulse_runs_once() -> None:
 
     assert program.repeat_seconds == 1.2
     assert program.repeat_count == 1
+
+
+async def test_color_pulse_is_projected_to_the_browser_protocol() -> None:
+    from tfr_plugins_public.speaker_effects import plugin
+
+    plugins = await PluginManager.load(
+        enabled=("speaker_effects",),
+        config={
+            "speaker_effects": {
+                "rules": [
+                    {
+                        "speaker": "Alice",
+                        "effect": "color_pulse",
+                        "color": "#0000ff",
+                        "accent_color": "#ffffff",
+                    }
+                ]
+            }
+        },
+        event_bus=EventBus(),
+        command_bus=CommandBus(),
+        targets={},
+        discovered=(FakeEntryPoint("speaker_effects", plugin),),
+        scope="gateway",
+    )
+
+    projected = browser_event(1, speech("Alice says, hello", sender="Alice"), plugins)
+
+    assert projected is not None
+    presentation = projected["event"]["presentation"]
+    assert presentation["version"] == 1
+    assert presentation["programs"][0]["start"] == 0
+    assert presentation["programs"][0]["end"] == 5
+    assert presentation["programs"][0]["variants"][0]["foreground_keyframes"] == [
+        {"at": 0.0, "color": "#0000ff"},
+        {"at": 0.5, "color": "#ffffff"},
+        {"at": 1.0, "color": "#0000ff"},
+    ]
 
 
 async def test_missing_rules_loads_successfully_as_a_no_op() -> None:
