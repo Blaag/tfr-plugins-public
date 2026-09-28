@@ -3,17 +3,20 @@ from __future__ import annotations
 import math
 import re
 from collections.abc import Mapping, Sequence
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from typing import Any
 
 from tfr.plugin_api import (
     PLUGIN_API_VERSION,
+    EffectProgram,
     Event,
     EventKind,
     PluginRegistrar,
     PluginRegistrationError,
+    PresentationStyle,
     TextDecoration,
     TextEffectKind,
+    color_pulse,
     derive_bright_color,
     terminal_plain_text,
     validate_color,
@@ -107,6 +110,22 @@ class SpeakerRule:
             effect_width=self.effect_width,
             sparkle_count=self.sparkle_count,
             seed=event.event_id.int & 0xFFFFFFFF,
+        )
+
+    def presentation(self, start: int, end: int) -> EffectProgram:
+        repeat_count = min(20, int(300 // self.repeat_seconds)) if self.loop else 1
+        return replace(
+            color_pulse(
+                start,
+                end,
+                base_color=self.color,
+                accent_color=self.accent_color,
+                duration_seconds=self.interval_seconds,
+                repeat_seconds=self.repeat_seconds if self.loop else self.interval_seconds,
+                repeat_count=repeat_count,
+                reduced_motion=PresentationStyle(foreground=self.accent_color, bold=True),
+            ),
+            frames_per_second=self.frames_per_second,
         )
 
 
@@ -249,6 +268,19 @@ def _parse_rule(value: object) -> SpeakerRule:
         )
     if frames_per_second > 30:
         raise PluginRegistrationError("speaker effect frames_per_second cannot exceed 30")
+    if effect is TextEffectKind.COLOR_PULSE:
+        if not 1 <= interval <= 3:
+            raise PluginRegistrationError(
+                "color_pulse duration_seconds must be between 1 and 3"
+            )
+        if loop and repeat_seconds > 60:
+            raise PluginRegistrationError(
+                "color_pulse repeat_seconds must be between 1 and 60"
+            )
+        if frames_per_second > 20:
+            raise PluginRegistrationError(
+                "color_pulse frames_per_second cannot exceed 20"
+            )
     shimmer_width = _number(value.get("shimmer_width"), "shimmer_width", default=1.5)
     if "shimmer_width" in value and effect is not TextEffectKind.SHIMMER:
         raise PluginRegistrationError("shimmer_width is supported only by shimmer")
@@ -332,8 +364,7 @@ class SpeakerEffectsPlugin:
             # enabling this plugin without configuration is a harmless no-op.
             return
 
-        def decorate(event: Event, text: str) -> tuple[TextDecoration, ...]:
-            decorations: list[TextDecoration] = []
+        def matching_rule(event: Event, text: str) -> tuple[SpeakerRule, int, int] | None:
             sender = event.provenance.sender_name if event.provenance is not None else None
             for rule in rules:
                 inferred_pose = (
@@ -351,11 +382,25 @@ class SpeakerEffectsPlugin:
                 span = _speaker_span(event, text, rule.speaker, inferred_pose=inferred_pose)
                 if span is None:
                     continue
-                decorations.append(rule.decoration(event, *span))
-                break
-            return tuple(decorations)
+                return rule, *span
+            return None
+
+        def decorate(event: Event, text: str) -> tuple[TextDecoration, ...]:
+            match = matching_rule(event, text)
+            if match is None or match[0].effect is TextEffectKind.COLOR_PULSE:
+                return ()
+            rule, start, end = match
+            return (rule.decoration(event, start, end),)
+
+        def present(event: Event, text: str) -> tuple[EffectProgram, ...]:
+            match = matching_rule(event, text)
+            if match is None or match[0].effect is not TextEffectKind.COLOR_PULSE:
+                return ()
+            rule, start, end = match
+            return (rule.presentation(start, end),)
 
         registrar.register_display_decorator("speaker-effects", decorate)
+        registrar.register_presentation_decorator("speaker-effects", present)
 
 
 plugin = SpeakerEffectsPlugin()

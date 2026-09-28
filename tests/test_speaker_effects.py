@@ -8,6 +8,7 @@ import pytest
 from tfr.core import CommandBus, EventBus
 from tfr.events import Direction, Event, EventKind, Provenance
 from tfr.plugins import PluginManager
+from tfr.presentation import PresentationStyle
 from tfr.text_effects import TextEffectKind
 
 
@@ -296,6 +297,32 @@ def test_rules_reject_timing_options_that_cannot_affect_the_effect(
         _parse_rule(value)
 
 
+@pytest.mark.parametrize(
+    ("extra", "message"),
+    [
+        ({"duration_seconds": 0.5}, "duration_seconds must be between 1 and 3"),
+        ({"duration_seconds": 4}, "duration_seconds must be between 1 and 3"),
+        ({"repeat_seconds": 61}, "repeat_seconds must be between 1 and 60"),
+        ({"frames_per_second": 21}, "frames_per_second cannot exceed 20"),
+    ],
+)
+def test_portable_color_pulse_rejects_values_outside_dsl_limits(
+    extra: dict[str, object],
+    message: str,
+) -> None:
+    from tfr_plugins_public.speaker_effects import _parse_rule
+
+    with pytest.raises(ValueError, match=message):
+        _parse_rule(
+            {
+                "speaker": "Example",
+                "effect": "color_pulse",
+                "color": "#6f7782",
+                **extra,
+            }
+        )
+
+
 async def test_first_matching_rule_wins() -> None:
     from tfr_plugins_public.speaker_effects import plugin
 
@@ -331,6 +358,78 @@ async def test_first_matching_rule_wins() -> None:
 
     assert len(decorations) == 1
     assert decorations[0].effect is TextEffectKind.SHIMMER
+
+
+async def test_color_pulse_uses_portable_presentation_in_ui_and_gateway() -> None:
+    from tfr_plugins_public.speaker_effects import plugin
+
+    config = {
+        "speaker_effects": {
+            "rules": [
+                {
+                    "speaker": "Alice",
+                    "effect": "color_pulse",
+                    "color": "#0000ff",
+                    "accent_color": "#ffffff",
+                    "duration_seconds": 1.2,
+                    "repeat_seconds": 10,
+                    "frames_per_second": 12,
+                }
+            ]
+        }
+    }
+    event = speech("Alice says, hello", sender="Alice")
+    for scope in ("ui", "gateway"):
+        plugins = await PluginManager.load(
+            enabled=("speaker_effects",),
+            config=config,
+            event_bus=EventBus(),
+            command_bus=CommandBus(),
+            targets={},
+            discovered=(FakeEntryPoint("speaker_effects", plugin),),
+            scope=scope,
+        )
+
+        assert plugins.decorate_display(event, event.display_text or "") == ()
+        program = plugins.presentation_programs(event, "Alice says, hello")[0]
+        assert (program.start, program.end) == (0, 5)
+        assert program.duration_seconds == 1.2
+        assert program.repeat_seconds == 10
+        assert program.repeat_count == 20
+        assert program.frames_per_second == 12
+        assert program.reduced_motion == PresentationStyle(foreground="#ffffff", bold=True)
+
+
+async def test_non_looping_color_pulse_runs_once() -> None:
+    from tfr_plugins_public.speaker_effects import plugin
+
+    plugins = await PluginManager.load(
+        enabled=("speaker_effects",),
+        config={
+            "speaker_effects": {
+                "rules": [
+                    {
+                        "speaker": "Alice",
+                        "effect": "color_pulse",
+                        "color": "#0000ff",
+                        "duration_seconds": 1.2,
+                        "loop": False,
+                    }
+                ]
+            }
+        },
+        event_bus=EventBus(),
+        command_bus=CommandBus(),
+        targets={},
+        discovered=(FakeEntryPoint("speaker_effects", plugin),),
+        scope="gateway",
+    )
+    event = speech("Alice says, hello", sender="Alice")
+
+    program = plugins.presentation_programs(event, event.display_text or "")[0]
+
+    assert program.repeat_seconds == 1.2
+    assert program.repeat_count == 1
 
 
 async def test_missing_rules_loads_successfully_as_a_no_op() -> None:

@@ -143,10 +143,14 @@ over each burst.
 ### `color_pulse`
 
 The whole name pulses from `color` to `accent_color` and back once per
-burst, following a smooth sine curve.
+burst. This effect uses TFR's portable presentation API, so it is rendered in
+both the terminal UI and PWA. Reduced-motion clients show a static bold
+`accent_color` instead.
 
 - `color` (required), `accent_color` (optional, auto-derived)
 - `duration_seconds` (default `1.2`)
+- Portable limits require a duration of `1`-`3` seconds, a repeat interval of
+  `1`-`60` seconds, and no more than `20` frames per second.
 
 ### `case_wave`
 
