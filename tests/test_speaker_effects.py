@@ -324,6 +324,39 @@ def test_portable_color_pulse_rejects_values_outside_dsl_limits(
         )
 
 
+def test_cylon_defaults_to_a_continuous_dark_to_bright_red_sweep() -> None:
+    from tfr_plugins_public.speaker_effects import _parse_rule
+
+    rule = _parse_rule({"speaker": "Example", "effect": "cylon"})
+
+    assert rule.effect == "cylon"
+    assert rule.color == "#180000"
+    assert rule.accent_color == "#ff0000"
+    assert rule.interval_seconds == 2
+    assert rule.repeat_seconds == 2
+    assert rule.effect_width == 2
+    assert rule.frames_per_second == 20
+
+
+@pytest.mark.parametrize(
+    ("extra", "message"),
+    [
+        ({"duration_seconds": 0.5}, "duration_seconds must be between 1 and 3"),
+        ({"repeat_seconds": 61}, "repeat_seconds must be between 1 and 60"),
+        ({"frames_per_second": 21}, "frames_per_second cannot exceed 20"),
+        ({"trail_width": 9}, "trail_width must be an integer between 1 and 8"),
+    ],
+)
+def test_cylon_rejects_values_outside_portable_limits(
+    extra: dict[str, object],
+    message: str,
+) -> None:
+    from tfr_plugins_public.speaker_effects import _parse_rule
+
+    with pytest.raises(ValueError, match=message):
+        _parse_rule({"speaker": "Example", "effect": "cylon", **extra})
+
+
 async def test_first_matching_rule_wins() -> None:
     from tfr_plugins_public.speaker_effects import plugin
 
@@ -469,6 +502,61 @@ async def test_color_pulse_is_projected_to_the_browser_protocol() -> None:
         {"at": 0.5, "color": "#ffffff"},
         {"at": 1.0, "color": "#0000ff"},
     ]
+
+
+async def test_cylon_is_portable_in_ui_and_browser_protocol() -> None:
+    from tfr_plugins_public.speaker_effects import plugin
+
+    config = {
+        "speaker_effects": {
+            "rules": [
+                {
+                    "speaker": "Alice",
+                    "effect": "cylon",
+                    "duration_seconds": 2.4,
+                    "repeat_seconds": 3,
+                    "trail_width": 3,
+                    "frames_per_second": 12,
+                }
+            ]
+        }
+    }
+    event = speech("Alice says, hello", sender="Alice")
+    for scope in ("ui", "gateway"):
+        plugins = await PluginManager.load(
+            enabled=("speaker_effects",),
+            config=config,
+            event_bus=EventBus(),
+            command_bus=CommandBus(),
+            targets={},
+            discovered=(FakeEntryPoint("speaker_effects", plugin),),
+            scope=scope,
+        )
+        assert plugins.decorate_display(event, event.display_text or "") == ()
+        program = plugins.presentation_programs(event, event.display_text or "")[0]
+        assert (program.start, program.end) == (0, 5)
+        assert program.duration_seconds == 2.4
+        assert program.repeat_seconds == 3
+        assert program.frames_per_second == 12
+        assert program.variants[0].character_sweep is not None
+        assert program.variants[0].character_sweep.trail_width == 3
+
+    projected = browser_event(1, event, plugins)
+    assert projected is not None
+    sweep = projected["event"]["presentation"]["programs"][0]["variants"][0][
+        "character_sweep"
+    ]
+    assert sweep == {
+        "positions": [
+            {"at": 0.0, "position": 0.0},
+            {"at": 0.5, "position": 1.0},
+            {"at": 1.0, "position": 0.0},
+        ],
+        "base_color": "#180000",
+        "head_color": "#ff0000",
+        "trail_width": 3,
+        "uppercase_head": True,
+    }
 
 
 async def test_missing_rules_loads_successfully_as_a_no_op() -> None:
