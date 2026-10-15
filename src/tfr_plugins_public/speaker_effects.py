@@ -3,23 +3,28 @@ from __future__ import annotations
 import math
 import re
 from collections.abc import Mapping, Sequence
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from typing import Any
 
 from tfr.plugin_api import (
     PLUGIN_API_VERSION,
+    EffectProgram,
     Event,
     EventKind,
     PluginRegistrar,
     PluginRegistrationError,
+    PresentationStyle,
     TextDecoration,
     TextEffectKind,
+    character_sweep,
+    color_pulse,
     derive_bright_color,
     terminal_plain_text,
     validate_color,
 )
 
 _SUPPORTED_KINDS = frozenset({EventKind.SAY, EventKind.POSE})
+_CYLON = "cylon"
 _RULE_FIELDS = frozenset(
     {
         "speaker",
@@ -74,12 +79,13 @@ _ACCENT_EFFECTS = {
     TextEffectKind.CASE_WAVE,
 }
 _SPEAKER_EFFECTS = frozenset(TextEffectKind) - {TextEffectKind.TERMINAL_REVEAL}
+_PORTABLE_EFFECTS = frozenset({TextEffectKind.COLOR_PULSE, _CYLON})
 
 
 @dataclass(frozen=True, slots=True)
 class SpeakerRule:
     speaker: str
-    effect: TextEffectKind
+    effect: TextEffectKind | str
     color: str
     accent_color: str
     interval_seconds: float
@@ -107,6 +113,37 @@ class SpeakerRule:
             effect_width=self.effect_width,
             sparkle_count=self.sparkle_count,
             seed=event.event_id.int & 0xFFFFFFFF,
+        )
+
+    def presentation(self, start: int, end: int) -> EffectProgram:
+        repeat_count = min(20, int(300 // self.repeat_seconds)) if self.loop else 1
+        repeat_seconds = self.repeat_seconds if self.loop else self.interval_seconds
+        if self.effect == _CYLON:
+            return character_sweep(
+                start,
+                end,
+                base_color=self.color,
+                head_color=self.accent_color,
+                trail_width=self.effect_width,
+                uppercase_head=True,
+                duration_seconds=self.interval_seconds,
+                repeat_seconds=repeat_seconds,
+                repeat_count=repeat_count,
+                frames_per_second=self.frames_per_second,
+                reduced_motion=PresentationStyle(foreground=self.accent_color, bold=True),
+            )
+        return replace(
+            color_pulse(
+                start,
+                end,
+                base_color=self.color,
+                accent_color=self.accent_color,
+                duration_seconds=self.interval_seconds,
+                repeat_seconds=repeat_seconds,
+                repeat_count=repeat_count,
+                reduced_motion=PresentationStyle(foreground=self.accent_color, bold=True),
+            ),
+            frames_per_second=self.frames_per_second,
         )
 
 
@@ -159,18 +196,23 @@ def _parse_rule(value: object) -> SpeakerRule:
     speaker = value.get("speaker")
     if not isinstance(speaker, str) or not speaker.strip():
         raise PluginRegistrationError("speaker effect speaker must be a non-empty string")
+    effect_value = value.get("effect")
     try:
-        effect = TextEffectKind(value.get("effect"))
+        effect = _CYLON if effect_value == _CYLON else TextEffectKind(effect_value)
     except (TypeError, ValueError) as exc:
-        supported = ", ".join(effect.value for effect in _SPEAKER_EFFECTS)
+        supported = ", ".join(sorted((*[item.value for item in _SPEAKER_EFFECTS], _CYLON)))
         raise PluginRegistrationError(
             f"unsupported speaker effect; choose from {supported}"
         ) from exc
-    if effect not in _SPEAKER_EFFECTS:
-        supported = ", ".join(candidate.value for candidate in _SPEAKER_EFFECTS)
+    if effect != _CYLON and effect not in _SPEAKER_EFFECTS:
+        supported = ", ".join(sorted((*[item.value for item in _SPEAKER_EFFECTS], _CYLON)))
         raise PluginRegistrationError(f"unsupported speaker effect; choose from {supported}")
     try:
-        if effect is TextEffectKind.AGE_DECAY:
+        if effect == _CYLON:
+            if "end_color" in value:
+                raise PluginRegistrationError("end_color is supported only by age_decay")
+            color = validate_color(value.get("color", "#180000"))
+        elif effect is TextEffectKind.AGE_DECAY:
             if "color" in value:
                 raise PluginRegistrationError("age_decay uses end_color instead of color")
             color = validate_color(value.get("end_color"))
@@ -178,13 +220,16 @@ def _parse_rule(value: object) -> SpeakerRule:
             if "end_color" in value:
                 raise PluginRegistrationError("end_color is supported only by age_decay")
             color = validate_color(value.get("color"))
-        if "accent_color" in value and effect not in _ACCENT_EFFECTS:
+        if "accent_color" in value and effect not in {*_ACCENT_EFFECTS, _CYLON}:
             raise PluginRegistrationError("accent_color is not supported by this effect")
         accent_value = value.get("accent_color")
         if accent_value is None:
-            accent_color = (
-                "#d7ffff" if effect is TextEffectKind.FROST else derive_bright_color(color)
-            )
+            if effect == _CYLON:
+                accent_color = "#ff0000"
+            else:
+                accent_color = (
+                    "#d7ffff" if effect is TextEffectKind.FROST else derive_bright_color(color)
+                )
         else:
             accent_color = validate_color(accent_value)
     except ValueError as exc:
@@ -210,9 +255,12 @@ def _parse_rule(value: object) -> SpeakerRule:
         raise PluginRegistrationError(
             "step_seconds is supported only by capitalization_roll and case_wave"
         )
-    if "duration_seconds" in value and effect not in _DURATION_DEFAULTS:
+    if "duration_seconds" in value and effect not in {*_DURATION_DEFAULTS, _CYLON}:
         raise PluginRegistrationError("duration_seconds is not supported by this effect")
-    if effect is TextEffectKind.SHIMMER:
+    if effect == _CYLON:
+        interval = _number(value.get("duration_seconds"), "duration_seconds", default=2.0)
+        burst_duration = interval
+    elif effect is TextEffectKind.SHIMMER:
         interval = _number(value.get("period_seconds"), "period_seconds", default=1.4)
         burst_duration = interval
     elif effect in _STEPPED_EFFECTS:
@@ -233,10 +281,20 @@ def _parse_rule(value: object) -> SpeakerRule:
     )
     if not loop and "repeat_seconds" in value:
         raise PluginRegistrationError("repeat_seconds is supported only when loop is true")
-    repeat_seconds = _number(value.get("repeat_seconds"), "repeat_seconds", default=10.0)
-    if loop and repeat_seconds <= burst_duration:
+    repeat_seconds = _number(
+        value.get("repeat_seconds"),
+        "repeat_seconds",
+        default=2.0 if effect == _CYLON else 10.0,
+    )
+    if loop and (
+        repeat_seconds < burst_duration
+        if effect == _CYLON
+        else repeat_seconds <= burst_duration
+    ):
         raise PluginRegistrationError(
-            "speaker effect repeat_seconds must exceed its burst duration"
+            "speaker effect repeat_seconds must not be shorter than its burst duration"
+            if effect == _CYLON
+            else "speaker effect repeat_seconds must exceed its burst duration"
         )
     frames_per_second = _number(
         value.get("frames_per_second"),
@@ -249,20 +307,40 @@ def _parse_rule(value: object) -> SpeakerRule:
         )
     if frames_per_second > 30:
         raise PluginRegistrationError("speaker effect frames_per_second cannot exceed 30")
+    if effect in _PORTABLE_EFFECTS:
+        if not 1 <= interval <= 3:
+            raise PluginRegistrationError(
+                f"{effect.value if isinstance(effect, TextEffectKind) else effect} "
+                "duration_seconds must be between 1 and 3"
+            )
+        if loop and repeat_seconds > 60:
+            raise PluginRegistrationError(
+                f"{effect.value if isinstance(effect, TextEffectKind) else effect} "
+                "repeat_seconds must be between 1 and 60"
+            )
+        if frames_per_second > 20:
+            raise PluginRegistrationError(
+                f"{effect.value if isinstance(effect, TextEffectKind) else effect} "
+                "frames_per_second cannot exceed 20"
+            )
     shimmer_width = _number(value.get("shimmer_width"), "shimmer_width", default=1.5)
     if "shimmer_width" in value and effect is not TextEffectKind.SHIMMER:
         raise PluginRegistrationError("shimmer_width is supported only by shimmer")
-    if "trail_width" in value and effect is not TextEffectKind.COMET:
-        raise PluginRegistrationError("trail_width is supported only by comet")
+    if "trail_width" in value and effect not in {TextEffectKind.COMET, _CYLON}:
+        raise PluginRegistrationError("trail_width is supported only by comet and cylon")
     if "sparkle_count" in value and effect is not TextEffectKind.SPARKLE:
         raise PluginRegistrationError("sparkle_count is supported only by sparkle")
     if "wave_width" in value and effect not in _WAVE_WIDTH_EFFECTS:
         raise PluginRegistrationError("wave_width is not supported by this effect")
     effect_width = _integer(
-        value.get("trail_width") if effect is TextEffectKind.COMET else value.get("wave_width"),
-        "trail_width" if effect is TextEffectKind.COMET else "wave_width",
+        (
+            value.get("trail_width")
+            if effect in {TextEffectKind.COMET, _CYLON}
+            else value.get("wave_width")
+        ),
+        "trail_width" if effect in {TextEffectKind.COMET, _CYLON} else "wave_width",
         default=3 if effect is TextEffectKind.COMET else 2,
-        maximum=20,
+        maximum=8 if effect == _CYLON else 20,
     )
     sparkle_count = _integer(
         value.get("sparkle_count"),
@@ -332,8 +410,7 @@ class SpeakerEffectsPlugin:
             # enabling this plugin without configuration is a harmless no-op.
             return
 
-        def decorate(event: Event, text: str) -> tuple[TextDecoration, ...]:
-            decorations: list[TextDecoration] = []
+        def matching_rule(event: Event, text: str) -> tuple[SpeakerRule, int, int] | None:
             sender = event.provenance.sender_name if event.provenance is not None else None
             for rule in rules:
                 inferred_pose = (
@@ -351,11 +428,25 @@ class SpeakerEffectsPlugin:
                 span = _speaker_span(event, text, rule.speaker, inferred_pose=inferred_pose)
                 if span is None:
                     continue
-                decorations.append(rule.decoration(event, *span))
-                break
-            return tuple(decorations)
+                return rule, *span
+            return None
+
+        def decorate(event: Event, text: str) -> tuple[TextDecoration, ...]:
+            match = matching_rule(event, text)
+            if match is None or match[0].effect in _PORTABLE_EFFECTS:
+                return ()
+            rule, start, end = match
+            return (rule.decoration(event, start, end),)
+
+        def present(event: Event, text: str) -> tuple[EffectProgram, ...]:
+            match = matching_rule(event, text)
+            if match is None or match[0].effect not in _PORTABLE_EFFECTS:
+                return ()
+            rule, start, end = match
+            return (rule.presentation(start, end),)
 
         registrar.register_display_decorator("speaker-effects", decorate)
+        registrar.register_presentation_decorator("speaker-effects", present)
 
 
 plugin = SpeakerEffectsPlugin()

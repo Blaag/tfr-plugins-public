@@ -81,7 +81,7 @@ def test_manifest_records_compatibility_plugins_and_artifact(tmp_path: Path, mon
     )
 
     assert manifest["compatibility"] == {
-        "tfr_minimum": "0.1.1",
+        "tfr_minimum": "0.1.17",
         "tfr_maximum_exclusive": "0.2.0",
         "plugin_api_minimum": 1,
         "plugin_api_maximum": 1,
