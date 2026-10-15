@@ -46,8 +46,10 @@ list loads successfully and decorates nothing — it's a safe no-op default.
 
 ### `shimmer`
 
-A bright band sweeps back and forth across the name, brightest at its center
-and fading outward, continuously looping by default.
+A bright band sweeps across the name, brightest at its center and fading
+outward, continuously looping by default. This portable effect renders in both
+the terminal UI and PWA; reduced-motion clients show a static bold
+`accent_color` name.
 
 - `color` (required), `accent_color` (optional, auto-derived)
 - `period_seconds` (default `1.4`) — duration of one sweep pass
@@ -71,7 +73,9 @@ symmetric.
 
 - `color` (required), `accent_color` (optional, auto-derived)
 - `duration_seconds` (default `1.2`) — time for one pass across the name
-- `trail_width` (default `3`, integer `1`–`20`) — length of the fading tail
+- `trail_width` (default `3`, integer `1`–`8`) — length of the fading tail
+- This portable effect renders in both the terminal UI and PWA; reduced-motion
+  clients show a static bold `accent_color` name.
 
 ### `sparkle`
 
@@ -117,6 +121,9 @@ A one-shot wave of fire colors (`#ffff5f` → `#ffaf00` → `#ff5f00` → `#d700
 → `color`) travels across the name from right to left, like glowing embers
 cooling as the burst passes.
 
+This portable effect renders in both the terminal UI and PWA; reduced-motion
+clients show a static bold amber name.
+
 - `color` (required); does not accept `accent_color`
 - `duration_seconds` (default `1.8`)
 
@@ -133,7 +140,8 @@ outward from both ends toward the center and then receding, over one burst.
 ### `rainbow_wave`
 
 A continuous rainbow gradient sweeps across the name, cycling through hues
-over each burst.
+over each burst. This portable effect renders in both the terminal UI and PWA;
+reduced-motion clients show a static bold `color` name.
 
 - `color` (required); does not accept `accent_color` (the rainbow hues are
   computed independently of `color`, which is used only as the effect's
