@@ -238,8 +238,9 @@ paces later lines.
 `gag` suppresses matching inbound lines from the active world's display while
 leaving their canonical events available to logging and replay. Expressions are
 persistent configuration under `plugins.config.gag.worlds`, keyed by exact world
-alias. Use `/gag` or `/gag list` to display the active world's configured
-expressions. Each world may have up to 100 expressions of 1,000 characters each.
+name (not a world-switch alias). Use `/gag` or `/gag list` to display the active
+world's configured expressions. Each world may have up to 100 expressions of
+1,000 characters each.
 Matching has a 10-millisecond per-line budget and fails open if that budget is
 exhausted, so an expensive expression cannot stall inbound display processing.
 
