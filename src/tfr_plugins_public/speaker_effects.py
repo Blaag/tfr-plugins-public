@@ -14,8 +14,11 @@ from tfr.plugin_api import (
     PluginRegistrar,
     PluginRegistrationError,
     PresentationStyle,
+    SweepTrailMode,
     TextDecoration,
     TextEffectKind,
+    character_hue_wave,
+    character_palette_front,
     character_sweep,
     color_pulse,
     derive_bright_color,
@@ -78,8 +81,23 @@ _ACCENT_EFFECTS = {
     TextEffectKind.COLOR_PULSE,
     TextEffectKind.CASE_WAVE,
 }
-_SPEAKER_EFFECTS = frozenset(TextEffectKind) - {TextEffectKind.TERMINAL_REVEAL}
-_PORTABLE_EFFECTS = frozenset({TextEffectKind.COLOR_PULSE, _CYLON})
+_SPEAKER_EFFECTS = frozenset(TextEffectKind) - {
+    TextEffectKind.TERMINAL_REVEAL,
+    TextEffectKind.COMBO_PULSE,
+    TextEffectKind.COMBO_FLASH_UPPER,
+    TextEffectKind.COMBO_CYLON,
+    TextEffectKind.COMBO_GODLIKE,
+}
+_PORTABLE_EFFECTS = frozenset(
+    {
+        TextEffectKind.SHIMMER,
+        TextEffectKind.COMET,
+        TextEffectKind.EMBER,
+        TextEffectKind.RAINBOW_WAVE,
+        TextEffectKind.COLOR_PULSE,
+        _CYLON,
+    }
+)
 
 
 @dataclass(frozen=True, slots=True)
@@ -131,6 +149,60 @@ class SpeakerRule:
                 repeat_count=repeat_count,
                 frames_per_second=self.frames_per_second,
                 reduced_motion=PresentationStyle(foreground=self.accent_color, bold=True),
+            )
+        if self.effect is TextEffectKind.SHIMMER:
+            return character_sweep(
+                start,
+                end,
+                base_color=self.color,
+                head_color=self.accent_color,
+                trail_width=self.shimmer_width,
+                start_padding=self.shimmer_width,
+                end_padding=self.shimmer_width,
+                return_to_start=False,
+                duration_seconds=self.interval_seconds,
+                repeat_seconds=repeat_seconds,
+                repeat_count=repeat_count,
+                frames_per_second=self.frames_per_second,
+                reduced_motion=PresentationStyle(foreground=self.accent_color, bold=True),
+            )
+        if self.effect is TextEffectKind.COMET:
+            return character_sweep(
+                start,
+                end,
+                base_color=self.color,
+                head_color=self.accent_color,
+                trail_width=self.effect_width,
+                trail_mode=SweepTrailMode.BEHIND,
+                end_padding=self.effect_width,
+                return_to_start=False,
+                duration_seconds=self.interval_seconds,
+                repeat_seconds=repeat_seconds,
+                repeat_count=repeat_count,
+                frames_per_second=self.frames_per_second,
+                reduced_motion=PresentationStyle(foreground=self.accent_color, bold=True),
+            )
+        if self.effect is TextEffectKind.RAINBOW_WAVE:
+            return character_hue_wave(
+                start,
+                end,
+                base_color=self.color,
+                duration_seconds=self.interval_seconds,
+                repeat_seconds=repeat_seconds,
+                repeat_count=repeat_count,
+                frames_per_second=self.frames_per_second,
+                reduced_motion=PresentationStyle(foreground=self.color, bold=True),
+            )
+        if self.effect is TextEffectKind.EMBER:
+            return character_palette_front(
+                start,
+                end,
+                colors=("#ffff5f", "#ffaf00", "#ff5f00", "#d70000", self.color),
+                duration_seconds=self.interval_seconds,
+                repeat_seconds=repeat_seconds,
+                repeat_count=repeat_count,
+                frames_per_second=self.frames_per_second,
+                reduced_motion=PresentationStyle(foreground="#ffaf00", bold=True),
             )
         return replace(
             color_pulse(
@@ -326,6 +398,8 @@ def _parse_rule(value: object) -> SpeakerRule:
     shimmer_width = _number(value.get("shimmer_width"), "shimmer_width", default=1.5)
     if "shimmer_width" in value and effect is not TextEffectKind.SHIMMER:
         raise PluginRegistrationError("shimmer_width is supported only by shimmer")
+    if effect is TextEffectKind.SHIMMER and shimmer_width > 8:
+        raise PluginRegistrationError("shimmer shimmer_width cannot exceed 8")
     if "trail_width" in value and effect not in {TextEffectKind.COMET, _CYLON}:
         raise PluginRegistrationError("trail_width is supported only by comet and cylon")
     if "sparkle_count" in value and effect is not TextEffectKind.SPARKLE:
@@ -340,7 +414,7 @@ def _parse_rule(value: object) -> SpeakerRule:
         ),
         "trail_width" if effect in {TextEffectKind.COMET, _CYLON} else "wave_width",
         default=3 if effect is TextEffectKind.COMET else 2,
-        maximum=8 if effect == _CYLON else 20,
+        maximum=8 if effect in {_CYLON, TextEffectKind.COMET} else 20,
     )
     sparkle_count = _integer(
         value.get("sparkle_count"),
