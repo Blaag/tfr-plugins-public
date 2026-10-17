@@ -64,7 +64,7 @@ async def test_default_configuration_models_9600_baud_serial_text() -> None:
     assert reveal is not None
     assert program.start == 0
     assert program.end == 5
-    assert 9600 * 0.75 <= 20 / reveal.interval_seconds <= 9600 * 1.25
+    assert 1200 * 0.75 <= 20 / reveal.interval_seconds <= 1200 * 1.25
     assert program.frames_per_second == 30
     assert reveal.glitch_width == 3
     assert reveal.settle_width == 3
@@ -72,7 +72,7 @@ async def test_default_configuration_models_9600_baud_serial_text() -> None:
     assert reveal.accent_color == "#ffffff"
     assert reveal.base_color == "#d7d7d7"
     assert reveal.seed == 7
-    assert reveal.inline_glitch_chance == 0.05
+    assert reveal.inline_glitch_chance == 0.35
 
 
 async def test_each_line_gets_a_stable_speed_within_the_configured_variation() -> None:

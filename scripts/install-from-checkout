@@ -1,0 +1,43 @@
+#!/bin/sh
+set -eu
+
+script=$0
+while [ -L "$script" ]; do
+    script_directory=$(CDPATH= cd -- "$(dirname -- "$script")" && pwd)
+    link=$(readlink "$script")
+    case "$link" in
+        /*) script=$link ;;
+        *) script=$script_directory/$link ;;
+    esac
+done
+repository=$(CDPATH= cd -- "$(dirname -- "$script")/.." && pwd)
+installer=$repository/src/tfr_plugins_public/install_checkout.py
+[ -f "$installer" ] || {
+    printf '%s\n' 'install-from-checkout: installer module is missing' >&2
+    exit 2
+}
+unset PYTHONHOME PYTHONPATH
+PYTHONNOUSERSITE=1
+export PYTHONNOUSERSITE
+
+if [ -n "${TFR_PYTHON-}" ]; then
+    python=$TFR_PYTHON
+else
+    managed_root=${TFR_MANAGED_ROOT:-"${HOME:?HOME is not set}/.local/share/tfr"}
+    if [ -x "$managed_root/current/bin/python" ]; then
+        python=$managed_root/current/bin/python
+    elif command -v python3 >/dev/null 2>&1 && python3 -I -c 'import tfr' >/dev/null 2>&1; then
+        python=$(command -v python3)
+    else
+        printf '%s\n' \
+            'install-from-checkout: cannot find TFR Python; set TFR_PYTHON to its interpreter' >&2
+        exit 2
+    fi
+fi
+
+if ! "$python" -I -c 'import tfr' >/dev/null 2>&1; then
+    printf '%s\n' 'install-from-checkout: selected Python cannot import TFR in isolated mode' >&2
+    exit 2
+fi
+
+exec "$python" -I "$installer" "$@"

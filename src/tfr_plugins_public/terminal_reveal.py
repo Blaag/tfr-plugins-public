@@ -85,7 +85,7 @@ class TerminalRevealPlugin:
             raise PluginRegistrationError(
                 "unknown terminal_reveal fields: " + ", ".join(sorted(unknown))
             )
-        baud_rate = _positive_number(config.get("baud_rate"), "baud_rate", 9600.0)
+        baud_rate = _positive_number(config.get("baud_rate"), "baud_rate", 1200.0)
         frames_per_second = _positive_number(
             config.get("frames_per_second"), "frames_per_second", 30.0
         )
@@ -93,7 +93,7 @@ class TerminalRevealPlugin:
             raise PluginRegistrationError("terminal_reveal frames_per_second cannot exceed 30")
         speed_variation = _fraction(config.get("speed_variation"), "speed_variation", 0.25, 0.95)
         inline_glitch_chance = _fraction(
-            config.get("inline_glitch_chance"), "inline_glitch_chance", 0.05
+            config.get("inline_glitch_chance"), "inline_glitch_chance", 0.35
         )
         glitch_width = config.get("glitch_width", 3)
         if (

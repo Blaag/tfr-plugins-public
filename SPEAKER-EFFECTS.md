@@ -9,7 +9,11 @@ into the overall `speaker_effects` configuration.
 
 `speaker_effects` decorates only the attributed speaker-name span of `SAY`
 and `POSE` events — not mentions of that name elsewhere in a line, and not
-lines misattributed to a different sender. Matching is case-insensitive.
+lines misattributed to a different sender. When a server adapter attributes the
+sender but cannot distinguish a pose and reports `RAW_OUTPUT` or ambiguous
+`SPEECH`, a rule that includes `pose` may infer it from the matching speaker
+name at the start of the line. Unattributed and say-shaped output is not inferred
+as a pose. Matching is case-insensitive.
 
 Each rule is an object with at least `speaker` and `effect`. Rules are
 checked in order; the first rule whose `speaker` (and optional `worlds`,
@@ -42,8 +46,10 @@ list loads successfully and decorates nothing — it's a safe no-op default.
 
 ### `shimmer`
 
-A bright band sweeps back and forth across the name, brightest at its center
-and fading outward, continuously looping by default.
+A bright band sweeps across the name, brightest at its center and fading
+outward, continuously looping by default. This portable effect renders in both
+the terminal UI and PWA; reduced-motion clients show a static bold
+`accent_color` name.
 
 - `color` (required), `accent_color` (optional, auto-derived)
 - `period_seconds` (default `1.4`) — duration of one sweep pass
@@ -67,7 +73,9 @@ symmetric.
 
 - `color` (required), `accent_color` (optional, auto-derived)
 - `duration_seconds` (default `1.2`) — time for one pass across the name
-- `trail_width` (default `3`, integer `1`–`20`) — length of the fading tail
+- `trail_width` (default `3`, integer `1`–`8`) — length of the fading tail
+- This portable effect renders in both the terminal UI and PWA; reduced-motion
+  clients show a static bold `accent_color` name.
 
 ### `sparkle`
 
@@ -113,6 +121,9 @@ A one-shot wave of fire colors (`#ffff5f` → `#ffaf00` → `#ff5f00` → `#d700
 → `color`) travels across the name from right to left, like glowing embers
 cooling as the burst passes.
 
+This portable effect renders in both the terminal UI and PWA; reduced-motion
+clients show a static bold amber name.
+
 - `color` (required); does not accept `accent_color`
 - `duration_seconds` (default `1.8`)
 
@@ -129,7 +140,8 @@ outward from both ends toward the center and then receding, over one burst.
 ### `rainbow_wave`
 
 A continuous rainbow gradient sweeps across the name, cycling through hues
-over each burst.
+over each burst. This portable effect renders in both the terminal UI and PWA;
+reduced-motion clients show a static bold `color` name.
 
 - `color` (required); does not accept `accent_color` (the rainbow hues are
   computed independently of `color`, which is used only as the effect's
@@ -139,10 +151,14 @@ over each burst.
 ### `color_pulse`
 
 The whole name pulses from `color` to `accent_color` and back once per
-burst, following a smooth sine curve.
+burst. This effect uses TFR's portable presentation API, so it is rendered in
+both the terminal UI and PWA. Reduced-motion clients show a static bold
+`accent_color` instead.
 
 - `color` (required), `accent_color` (optional, auto-derived)
 - `duration_seconds` (default `1.2`)
+- Portable limits require a duration of `1`-`3` seconds, a repeat interval of
+  `1`-`60` seconds, and no more than `20` frames per second.
 
 ### `case_wave`
 
@@ -154,6 +170,21 @@ single character.
 - `color` (required), `accent_color` (optional, auto-derived)
 - `step_seconds` (default `0.2`)
 - `wave_width` (default `2`, integer `1`–`20`) — width of the uppercased band
+
+### `cylon`
+
+A bright red head moves across the speaker name from left to right and back
+again. The head grapheme is uppercased, and an Oklab red gradient fades behind
+it in both directions. This portable effect renders in both the terminal UI and
+PWA; reduced-motion clients show a static bold bright red name.
+
+- `color` (optional, default `#180000`) — dim red resting color
+- `accent_color` (optional, default `#ff0000`) — bright red head color
+- `duration_seconds` (default `2`) — time for the complete out-and-back sweep
+- `repeat_seconds` (default `2`) — may equal the duration for continuous motion
+- `trail_width` (default `2`, integer `1`–`8`) — gradient radius in graphemes
+- Portable limits require a duration of `1`-`3` seconds, a repeat interval of
+  `1`-`60` seconds, and no more than `20` frames per second.
 
 ### `age_decay`
 
@@ -172,7 +203,7 @@ defaults to `false`.
 ## Uses `accent_color`
 
 `shimmer`, `capitalization_roll`, `comet`, `sparkle`, `frost`, `color_pulse`,
-and `case_wave` accept `accent_color`. All other effects reject it if set
+`case_wave`, and `cylon` accept `accent_color`. All other effects reject it if set
 explicitly, because they don't use a second color.
 
 ## Example
