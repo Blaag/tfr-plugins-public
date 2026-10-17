@@ -9,7 +9,7 @@ from tfr.core import CommandBus, EventBus
 from tfr.events import Direction, Event, EventKind, Provenance
 from tfr.gateway_web import browser_event
 from tfr.plugins import PluginManager
-from tfr.presentation import PresentationStyle
+from tfr.presentation import PresentationStyle, effect_programs_as_dict, validate_effect_programs
 from tfr.text_effects import TextEffectKind
 
 
@@ -99,11 +99,11 @@ async def test_rules_match_attributed_speakers_case_insensitively() -> None:
     carol = speech("Carol waves.", kind=EventKind.POSE, sender="CAROL")
 
     alice_programs = plugins.presentation_programs(alice, alice.display_text or "")
-    carol_decorations = plugins.decorate_display(carol, carol.display_text or "")
+    carol_programs = plugins.presentation_programs(carol, carol.display_text or "")
 
     assert (alice_programs[0].start, alice_programs[0].end) == (0, 5)
     assert alice_programs[0].variants[0].character_sweep is not None
-    assert carol_decorations[0].effect is TextEffectKind.CAPITALIZATION_ROLL
+    assert carol_programs[0].variants[0].character_style_sweep is not None
 
 
 async def test_pose_rules_infer_configured_speakers_from_unclassified_output() -> None:
@@ -112,13 +112,13 @@ async def test_pose_rules_infer_configured_speakers_from_unclassified_output() -
     ambiguous_pose = speech("Carol smiles.", kind=EventKind.SPEECH, sender="CAROL")
 
     raw_programs = plugins.presentation_programs(raw_pose, raw_pose.display_text or "")
-    ambiguous_decorations = plugins.decorate_display(
+    ambiguous_programs = plugins.presentation_programs(
         ambiguous_pose,
         ambiguous_pose.display_text or "",
     )
 
     assert raw_programs[0].variants[0].character_sweep is not None
-    assert ambiguous_decorations[0].effect is TextEffectKind.CAPITALIZATION_ROLL
+    assert ambiguous_programs[0].variants[0].character_style_sweep is not None
 
 
 async def test_inferred_poses_still_reject_mentions_and_say_only_rules() -> None:
@@ -173,10 +173,13 @@ async def test_rules_do_not_match_mentions_or_misattributed_names() -> None:
         )
         == ()
     )
-    assert plugins.presentation_programs(
-        speech("Someone says, Alice is here", sender="Someone"),
-        "Someone says, Alice is here",
-    ) == ()
+    assert (
+        plugins.presentation_programs(
+            speech("Someone says, Alice is here", sender="Someone"),
+            "Someone says, Alice is here",
+        )
+        == ()
+    )
     assert (
         plugins.decorate_display(
             speech("Alice says, hello", sender="Someone"),
@@ -228,8 +231,7 @@ async def test_rules_default_to_a_ten_second_repeat_cycle() -> None:
     [
         effect
         for effect in TextEffectKind
-        if effect is not TextEffectKind.TERMINAL_REVEAL
-        and not effect.value.startswith("combo_")
+        if effect is not TextEffectKind.TERMINAL_REVEAL and not effect.value.startswith("combo_")
     ],
 )
 def test_every_effect_type_has_a_valid_rule_configuration(effect: TextEffectKind) -> None:
@@ -250,6 +252,36 @@ def test_every_effect_type_has_a_valid_rule_configuration(effect: TextEffectKind
     assert rule.color == "#6f7782"
     assert rule.accent_color != rule.color
     assert rule.loop is (effect is not TextEffectKind.AGE_DECAY)
+
+    program = rule.presentation(0, len(rule.speaker), seed=42)
+    validate_effect_programs(f"{rule.speaker} says, hello", (program,))
+    projected = effect_programs_as_dict((program,))
+    assert projected["programs"][0]["variants"][0]
+
+
+@pytest.mark.parametrize(
+    ("effect", "track"),
+    [
+        ("capitalization_roll", "character_style_sweep"),
+        ("case_wave", "character_style_sweep"),
+        ("underline_sweep", "character_style_sweep"),
+        ("bold_sweep", "character_style_sweep"),
+        ("reverse_sweep", "character_style_sweep"),
+        ("sparkle", "character_sparkle"),
+        ("frost", "character_sweep"),
+    ],
+)
+def test_remaining_speaker_effects_compile_to_shared_portable_tracks(
+    effect: str, track: str
+) -> None:
+    from tfr_plugins_public.speaker_effects import _parse_rule
+
+    rule = _parse_rule({"speaker": "Example", "effect": effect, "color": "#6f7782"})
+    variant = effect_programs_as_dict((rule.presentation(0, len(rule.speaker), seed=42),))[
+        "programs"
+    ][0]["variants"][0]
+
+    assert track in variant
 
 
 def test_age_decay_can_loop_only_when_repeat_exceeds_decay_duration() -> None:
@@ -556,9 +588,7 @@ async def test_cylon_is_portable_in_ui_and_browser_protocol() -> None:
 
     projected = browser_event(1, event, plugins)
     assert projected is not None
-    sweep = projected["event"]["presentation"]["programs"][0]["variants"][0][
-        "character_sweep"
-    ]
+    sweep = projected["event"]["presentation"]["programs"][0]["variants"][0]["character_sweep"]
     assert sweep == {
         "positions": [
             {"at": 0.0, "position": 0.0},
@@ -642,9 +672,7 @@ async def test_configured_speaker_effects_use_portable_character_tracks() -> Non
     shimmer_track = shimmer["event"]["presentation"]["programs"][0]["variants"][0][
         "character_sweep"
     ]
-    comet_track = comet["event"]["presentation"]["programs"][0]["variants"][0][
-        "character_sweep"
-    ]
+    comet_track = comet["event"]["presentation"]["programs"][0]["variants"][0]["character_sweep"]
     assert shimmer_track["trail_width"] == 1.5
     assert shimmer_track["start_padding"] == 1.5
     assert shimmer_track["end_padding"] == 1.5
