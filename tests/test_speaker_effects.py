@@ -7,7 +7,9 @@ from uuid import UUID
 import pytest
 from tfr.core import CommandBus, EventBus
 from tfr.events import Direction, Event, EventKind, Provenance
+from tfr.gateway_web import browser_event
 from tfr.plugins import PluginManager
+from tfr.presentation import PresentationStyle, effect_programs_as_dict, validate_effect_programs
 from tfr.text_effects import TextEffectKind
 
 
@@ -96,12 +98,69 @@ async def test_rules_match_attributed_speakers_case_insensitively() -> None:
     alice = speech("\x1b[1mALICE\x1b[0m says, hello", sender="alice")
     carol = speech("Carol waves.", kind=EventKind.POSE, sender="CAROL")
 
-    alice_decorations = plugins.decorate_display(alice, alice.display_text or "")
-    carol_decorations = plugins.decorate_display(carol, carol.display_text or "")
+    alice_programs = plugins.presentation_programs(alice, alice.display_text or "")
+    carol_programs = plugins.presentation_programs(carol, carol.display_text or "")
 
-    assert alice_decorations[0].effect is TextEffectKind.SHIMMER
-    assert (alice_decorations[0].start, alice_decorations[0].end) == (0, 5)
-    assert carol_decorations[0].effect is TextEffectKind.CAPITALIZATION_ROLL
+    assert (alice_programs[0].start, alice_programs[0].end) == (0, 5)
+    assert alice_programs[0].variants[0].character_sweep is not None
+    assert carol_programs[0].variants[0].character_style_sweep is not None
+
+
+async def test_pose_rules_infer_configured_speakers_from_unclassified_output() -> None:
+    plugins = await manager()
+    raw_pose = speech("Alice waves.", kind=EventKind.RAW_OUTPUT, sender="ALICE")
+    ambiguous_pose = speech("Carol smiles.", kind=EventKind.SPEECH, sender="CAROL")
+
+    raw_programs = plugins.presentation_programs(raw_pose, raw_pose.display_text or "")
+    ambiguous_programs = plugins.presentation_programs(
+        ambiguous_pose,
+        ambiguous_pose.display_text or "",
+    )
+
+    assert raw_programs[0].variants[0].character_sweep is not None
+    assert ambiguous_programs[0].variants[0].character_style_sweep is not None
+
+
+async def test_inferred_poses_still_reject_mentions_and_say_only_rules() -> None:
+    plugins = await manager()
+    mention = speech("Someone waves to Alice.", kind=EventKind.RAW_OUTPUT, sender="Alice")
+    unattributed = speech("Alice waves.", kind=EventKind.RAW_OUTPUT)
+    misattributed = speech("Alice waves.", kind=EventKind.RAW_OUTPUT, sender="Someone")
+    say_shaped = speech("Alice says, hello", kind=EventKind.RAW_OUTPUT, sender="Alice")
+
+    assert plugins.decorate_display(mention, mention.display_text or "") == ()
+    assert plugins.decorate_display(unattributed, unattributed.display_text or "") == ()
+    assert plugins.decorate_display(misattributed, misattributed.display_text or "") == ()
+    assert plugins.decorate_display(say_shaped, say_shaped.display_text or "") == ()
+    for event in (mention, unattributed, misattributed, say_shaped):
+        assert plugins.presentation_programs(event, event.display_text or "") == ()
+
+    from tfr_plugins_public.speaker_effects import plugin
+
+    say_only = await PluginManager.load(
+        enabled=("speaker_effects",),
+        config={
+            "speaker_effects": {
+                "rules": [
+                    {
+                        "speaker": "Alice",
+                        "effect": "shimmer",
+                        "color": "#d70000",
+                        "kinds": ["say"],
+                    }
+                ]
+            }
+        },
+        event_bus=EventBus(),
+        command_bus=CommandBus(),
+        targets={},
+        discovered=(FakeEntryPoint("speaker_effects", plugin),),
+        scope="ui",
+    )
+    raw_pose = speech("Alice waves.", kind=EventKind.RAW_OUTPUT, sender="Alice")
+
+    assert say_only.decorate_display(raw_pose, raw_pose.display_text or "") == ()
+    assert say_only.presentation_programs(raw_pose, raw_pose.display_text or "") == ()
 
 
 async def test_rules_do_not_match_mentions_or_misattributed_names() -> None:
@@ -109,6 +168,13 @@ async def test_rules_do_not_match_mentions_or_misattributed_names() -> None:
 
     assert (
         plugins.decorate_display(
+            speech("Someone says, Alice is here", sender="Someone"),
+            "Someone says, Alice is here",
+        )
+        == ()
+    )
+    assert (
+        plugins.presentation_programs(
             speech("Someone says, Alice is here", sender="Someone"),
             "Someone says, Alice is here",
         )
@@ -134,18 +200,18 @@ async def test_rules_find_name_after_visible_nospoof_prefix() -> None:
     plugins = await manager()
     event = speech("[#12] Alice says, hello", sender="Alice")
 
-    decoration = plugins.decorate_display(event, event.display_text or "")[0]
+    program = plugins.presentation_programs(event, event.display_text or "")[0]
 
-    assert (decoration.start, decoration.end) == (6, 11)
+    assert (program.start, program.end) == (6, 11)
 
 
 async def test_rule_offsets_ignore_unsupported_cursor_controls() -> None:
     plugins = await manager()
     event = speech("\x1b[3CAlice says, hello", sender="Alice")
 
-    decoration = plugins.decorate_display(event, event.display_text or "")[0]
+    program = plugins.presentation_programs(event, event.display_text or "")[0]
 
-    assert (decoration.start, decoration.end) == (0, 5)
+    assert (program.start, program.end) == (0, 5)
 
 
 async def test_rules_default_to_a_ten_second_repeat_cycle() -> None:
@@ -153,15 +219,20 @@ async def test_rules_default_to_a_ten_second_repeat_cycle() -> None:
     first = speech("Alice says, one", sender="Alice", event_id=UUID(int=1))
     second = speech("Alice says, two", sender="Alice", event_id=UUID(int=2))
 
-    first_decoration = plugins.decorate_display(first, first.display_text or "")[0]
-    second_decoration = plugins.decorate_display(second, second.display_text or "")[0]
+    first_program = plugins.presentation_programs(first, first.display_text or "")[0]
+    second_program = plugins.presentation_programs(second, second.display_text or "")[0]
 
-    assert first_decoration.repeat_seconds == 10
-    assert second_decoration.repeat_seconds == 10
+    assert first_program.repeat_seconds == 10
+    assert second_program.repeat_seconds == 10
 
 
 @pytest.mark.parametrize(
-    "effect", [effect for effect in TextEffectKind if effect is not TextEffectKind.TERMINAL_REVEAL]
+    "effect",
+    [
+        effect
+        for effect in TextEffectKind
+        if effect is not TextEffectKind.TERMINAL_REVEAL and not effect.value.startswith("combo_")
+    ],
 )
 def test_every_effect_type_has_a_valid_rule_configuration(effect: TextEffectKind) -> None:
     from tfr_plugins_public.speaker_effects import _parse_rule
@@ -181,6 +252,36 @@ def test_every_effect_type_has_a_valid_rule_configuration(effect: TextEffectKind
     assert rule.color == "#6f7782"
     assert rule.accent_color != rule.color
     assert rule.loop is (effect is not TextEffectKind.AGE_DECAY)
+
+    program = rule.presentation(0, len(rule.speaker), seed=42)
+    validate_effect_programs(f"{rule.speaker} says, hello", (program,))
+    projected = effect_programs_as_dict((program,))
+    assert projected["programs"][0]["variants"][0]
+
+
+@pytest.mark.parametrize(
+    ("effect", "track"),
+    [
+        ("capitalization_roll", "character_style_sweep"),
+        ("case_wave", "character_style_sweep"),
+        ("underline_sweep", "character_style_sweep"),
+        ("bold_sweep", "character_style_sweep"),
+        ("reverse_sweep", "character_style_sweep"),
+        ("sparkle", "character_sparkle"),
+        ("frost", "character_sweep"),
+    ],
+)
+def test_remaining_speaker_effects_compile_to_shared_portable_tracks(
+    effect: str, track: str
+) -> None:
+    from tfr_plugins_public.speaker_effects import _parse_rule
+
+    rule = _parse_rule({"speaker": "Example", "effect": effect, "color": "#6f7782"})
+    variant = effect_programs_as_dict((rule.presentation(0, len(rule.speaker), seed=42),))[
+        "programs"
+    ][0]["variants"][0]
+
+    assert track in variant
 
 
 def test_age_decay_can_loop_only_when_repeat_exceeds_decay_duration() -> None:
@@ -242,6 +343,65 @@ def test_rules_reject_timing_options_that_cannot_affect_the_effect(
         _parse_rule(value)
 
 
+@pytest.mark.parametrize(
+    ("extra", "message"),
+    [
+        ({"duration_seconds": 0.5}, "duration_seconds must be between 1 and 3"),
+        ({"duration_seconds": 4}, "duration_seconds must be between 1 and 3"),
+        ({"repeat_seconds": 61}, "repeat_seconds must be between 1 and 60"),
+        ({"frames_per_second": 21}, "frames_per_second cannot exceed 20"),
+    ],
+)
+def test_portable_color_pulse_rejects_values_outside_dsl_limits(
+    extra: dict[str, object],
+    message: str,
+) -> None:
+    from tfr_plugins_public.speaker_effects import _parse_rule
+
+    with pytest.raises(ValueError, match=message):
+        _parse_rule(
+            {
+                "speaker": "Example",
+                "effect": "color_pulse",
+                "color": "#6f7782",
+                **extra,
+            }
+        )
+
+
+def test_cylon_defaults_to_a_continuous_dark_to_bright_red_sweep() -> None:
+    from tfr_plugins_public.speaker_effects import _parse_rule
+
+    rule = _parse_rule({"speaker": "Example", "effect": "cylon"})
+
+    assert rule.effect == "cylon"
+    assert rule.color == "#180000"
+    assert rule.accent_color == "#ff0000"
+    assert rule.interval_seconds == 2
+    assert rule.repeat_seconds == 2
+    assert rule.effect_width == 2
+    assert rule.frames_per_second == 20
+
+
+@pytest.mark.parametrize(
+    ("extra", "message"),
+    [
+        ({"duration_seconds": 0.5}, "duration_seconds must be between 1 and 3"),
+        ({"repeat_seconds": 61}, "repeat_seconds must be between 1 and 60"),
+        ({"frames_per_second": 21}, "frames_per_second cannot exceed 20"),
+        ({"trail_width": 9}, "trail_width must be an integer between 1 and 8"),
+    ],
+)
+def test_cylon_rejects_values_outside_portable_limits(
+    extra: dict[str, object],
+    message: str,
+) -> None:
+    from tfr_plugins_public.speaker_effects import _parse_rule
+
+    with pytest.raises(ValueError, match=message):
+        _parse_rule({"speaker": "Example", "effect": "cylon", **extra})
+
+
 async def test_first_matching_rule_wins() -> None:
     from tfr_plugins_public.speaker_effects import plugin
 
@@ -273,10 +433,251 @@ async def test_first_matching_rule_wins() -> None:
     )
     event = speech("Alice says, hello", sender="Alice")
 
-    decorations = plugins.decorate_display(event, event.display_text or "")
+    programs = plugins.presentation_programs(event, event.display_text or "")
 
-    assert len(decorations) == 1
-    assert decorations[0].effect is TextEffectKind.SHIMMER
+    assert len(programs) == 1
+    assert programs[0].fallback.foreground == "#d70000"
+
+
+async def test_color_pulse_uses_portable_presentation_in_ui_and_gateway() -> None:
+    from tfr_plugins_public.speaker_effects import plugin
+
+    config = {
+        "speaker_effects": {
+            "rules": [
+                {
+                    "speaker": "Alice",
+                    "effect": "color_pulse",
+                    "color": "#0000ff",
+                    "accent_color": "#ffffff",
+                    "duration_seconds": 1.2,
+                    "repeat_seconds": 10,
+                    "frames_per_second": 12,
+                }
+            ]
+        }
+    }
+    event = speech("Alice says, hello", sender="Alice")
+    for scope in ("ui", "gateway"):
+        plugins = await PluginManager.load(
+            enabled=("speaker_effects",),
+            config=config,
+            event_bus=EventBus(),
+            command_bus=CommandBus(),
+            targets={},
+            discovered=(FakeEntryPoint("speaker_effects", plugin),),
+            scope=scope,
+        )
+
+        assert plugins.decorate_display(event, event.display_text or "") == ()
+        program = plugins.presentation_programs(event, "Alice says, hello")[0]
+        assert (program.start, program.end) == (0, 5)
+        assert program.duration_seconds == 1.2
+        assert program.repeat_seconds == 10
+        assert program.repeat_count == 20
+        assert program.frames_per_second == 12
+        assert program.reduced_motion == PresentationStyle(foreground="#ffffff", bold=True)
+
+
+async def test_non_looping_color_pulse_runs_once() -> None:
+    from tfr_plugins_public.speaker_effects import plugin
+
+    plugins = await PluginManager.load(
+        enabled=("speaker_effects",),
+        config={
+            "speaker_effects": {
+                "rules": [
+                    {
+                        "speaker": "Alice",
+                        "effect": "color_pulse",
+                        "color": "#0000ff",
+                        "duration_seconds": 1.2,
+                        "loop": False,
+                    }
+                ]
+            }
+        },
+        event_bus=EventBus(),
+        command_bus=CommandBus(),
+        targets={},
+        discovered=(FakeEntryPoint("speaker_effects", plugin),),
+        scope="gateway",
+    )
+    event = speech("Alice says, hello", sender="Alice")
+
+    program = plugins.presentation_programs(event, event.display_text or "")[0]
+
+    assert program.repeat_seconds == 1.2
+    assert program.repeat_count == 1
+
+
+async def test_color_pulse_is_projected_to_the_browser_protocol() -> None:
+    from tfr_plugins_public.speaker_effects import plugin
+
+    plugins = await PluginManager.load(
+        enabled=("speaker_effects",),
+        config={
+            "speaker_effects": {
+                "rules": [
+                    {
+                        "speaker": "Alice",
+                        "effect": "color_pulse",
+                        "color": "#0000ff",
+                        "accent_color": "#ffffff",
+                    }
+                ]
+            }
+        },
+        event_bus=EventBus(),
+        command_bus=CommandBus(),
+        targets={},
+        discovered=(FakeEntryPoint("speaker_effects", plugin),),
+        scope="gateway",
+    )
+
+    projected = browser_event(1, speech("Alice says, hello", sender="Alice"), plugins)
+
+    assert projected is not None
+    presentation = projected["event"]["presentation"]
+    assert presentation["version"] == 1
+    assert presentation["programs"][0]["start"] == 0
+    assert presentation["programs"][0]["end"] == 5
+    assert presentation["programs"][0]["variants"][0]["foreground_keyframes"] == [
+        {"at": 0.0, "color": "#0000ff"},
+        {"at": 0.5, "color": "#ffffff"},
+        {"at": 1.0, "color": "#0000ff"},
+    ]
+
+
+async def test_cylon_is_portable_in_ui_and_browser_protocol() -> None:
+    from tfr_plugins_public.speaker_effects import plugin
+
+    config = {
+        "speaker_effects": {
+            "rules": [
+                {
+                    "speaker": "Alice",
+                    "effect": "cylon",
+                    "duration_seconds": 2.4,
+                    "repeat_seconds": 3,
+                    "trail_width": 3,
+                    "frames_per_second": 12,
+                }
+            ]
+        }
+    }
+    event = speech("Alice says, hello", sender="Alice")
+    for scope in ("ui", "gateway"):
+        plugins = await PluginManager.load(
+            enabled=("speaker_effects",),
+            config=config,
+            event_bus=EventBus(),
+            command_bus=CommandBus(),
+            targets={},
+            discovered=(FakeEntryPoint("speaker_effects", plugin),),
+            scope=scope,
+        )
+        assert plugins.decorate_display(event, event.display_text or "") == ()
+        program = plugins.presentation_programs(event, event.display_text or "")[0]
+        assert (program.start, program.end) == (0, 5)
+        assert program.duration_seconds == 2.4
+        assert program.repeat_seconds == 3
+        assert program.frames_per_second == 12
+        assert program.variants[0].character_sweep is not None
+        assert program.variants[0].character_sweep.trail_width == 3
+
+    projected = browser_event(1, event, plugins)
+    assert projected is not None
+    sweep = projected["event"]["presentation"]["programs"][0]["variants"][0]["character_sweep"]
+    assert sweep == {
+        "positions": [
+            {"at": 0.0, "position": 0.0},
+            {"at": 0.5, "position": 1.0},
+            {"at": 1.0, "position": 0.0},
+        ],
+        "base_color": "#180000",
+        "head_color": "#ff0000",
+        "trail_width": 3,
+        "uppercase_head": True,
+    }
+
+
+async def test_configured_speaker_effects_use_portable_character_tracks() -> None:
+    from tfr_plugins_public.speaker_effects import plugin
+
+    rules = [
+        {
+            "speaker": "Blood",
+            "effect": "shimmer",
+            "color": "#d70000",
+            "accent_color": "#ffffff",
+            "period_seconds": 1.4,
+            "repeat_seconds": 10,
+        },
+        {
+            "speaker": "wedge",
+            "effect": "ember",
+            "color": "#a9914a",
+            "duration_seconds": 3,
+        },
+        {
+            "speaker": "Jarin",
+            "effect": "rainbow_wave",
+            "color": "#ffc9d7",
+            "duration_seconds": 1.8,
+            "repeat_seconds": 10,
+        },
+        {
+            "speaker": "Adrick",
+            "effect": "comet",
+            "color": "#5f87af",
+            "accent_color": "#ffffff",
+            "duration_seconds": 1.2,
+            "trail_width": 3,
+            "repeat_seconds": 10,
+        },
+    ]
+    plugins = await PluginManager.load(
+        enabled=("speaker_effects",),
+        config={"speaker_effects": {"rules": rules}},
+        event_bus=EventBus(),
+        command_bus=CommandBus(),
+        targets={},
+        discovered=(FakeEntryPoint("speaker_effects", plugin),),
+        scope="gateway",
+    )
+
+    expected_tracks = {
+        "Blood": "character_sweep",
+        "wedge": "character_palette_front",
+        "Jarin": "character_hue_wave",
+        "Adrick": "character_sweep",
+    }
+    for speaker, track_name in expected_tracks.items():
+        event = speech(f"{speaker} says, hello", sender=speaker)
+        assert plugins.decorate_display(event, event.display_text or "") == ()
+        projected = browser_event(1, event, plugins)
+        assert projected is not None
+        variant = projected["event"]["presentation"]["programs"][0]["variants"][0]
+        assert track_name in variant
+        program = plugins.presentation_programs(event, event.display_text or "")[0]
+        assert program.fallback.foreground == next(
+            rule["color"] for rule in rules if rule["speaker"] == speaker
+        )
+        assert program.reduced_motion.bold is True
+
+    shimmer = browser_event(1, speech("Blood says, hello", sender="Blood"), plugins)
+    comet = browser_event(1, speech("Adrick says, hello", sender="Adrick"), plugins)
+    assert shimmer is not None and comet is not None
+    shimmer_track = shimmer["event"]["presentation"]["programs"][0]["variants"][0][
+        "character_sweep"
+    ]
+    comet_track = comet["event"]["presentation"]["programs"][0]["variants"][0]["character_sweep"]
+    assert shimmer_track["trail_width"] == 1.5
+    assert shimmer_track["start_padding"] == 1.5
+    assert shimmer_track["end_padding"] == 1.5
+    assert comet_track["trail_mode"] == "behind"
+    assert comet_track["end_padding"] == 3.0
 
 
 async def test_missing_rules_loads_successfully_as_a_no_op() -> None:

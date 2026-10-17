@@ -6,7 +6,7 @@ readme = "README.md"
 license = "MIT"
 license-files = ["LICENSE"]
 requires-python = ">=3.12"
-dependencies = ["tfr>=0.1,<0.2"]
+dependencies = ["tfr>=0.1.51,<0.2"]
 
 [project.entry-points."tfr.plugins.v1"]
 cat = "tfr_plugins_public.cat:plugin"

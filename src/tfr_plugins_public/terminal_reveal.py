@@ -7,12 +7,12 @@ from typing import Any
 
 from tfr.plugin_api import (
     PLUGIN_API_VERSION,
+    EffectProgram,
     Event,
     EventKind,
     PluginRegistrar,
     PluginRegistrationError,
-    TextDecoration,
-    TextEffectKind,
+    character_reveal,
     terminal_plain_text,
     validate_color,
 )
@@ -108,10 +108,10 @@ class TerminalRevealPlugin:
         if (
             not isinstance(maximum_characters, int)
             or isinstance(maximum_characters, bool)
-            or not 1 <= maximum_characters <= 16_384
+            or not 1 <= maximum_characters <= 4_096
         ):
             raise PluginRegistrationError(
-                "terminal_reveal maximum_characters must be an integer between 1 and 16384"
+                "terminal_reveal maximum_characters must be an integer between 1 and 4096"
             )
         settle_width = config.get("settle_width", 3)
         if (
@@ -162,7 +162,7 @@ class TerminalRevealPlugin:
             else None
         )
 
-        def decorate(event: Event, text: str) -> tuple[TextDecoration, ...]:
+        def present(event: Event, text: str) -> tuple[EffectProgram, ...]:
             if event.kind not in kinds:
                 return ()
             if worlds is not None and event.world.casefold() not in worlds:
@@ -178,24 +178,22 @@ class TerminalRevealPlugin:
                 maximum_duration_seconds / (len(visible_text) + glitch_width + settle_width),
             )
             return (
-                TextDecoration(
-                    start=0,
-                    end=len(visible_text),
-                    effect=TextEffectKind.TERMINAL_REVEAL,
+                character_reveal(
+                    0,
+                    len(visible_text),
+                    interval_seconds=interval_seconds,
                     base_color=trail_color,
                     accent_color=glitch_color,
-                    interval_seconds=interval_seconds,
-                    frames_per_second=frames_per_second,
-                    loop=False,
-                    effect_width=glitch_width,
+                    glitch_width=glitch_width,
+                    settle_width=settle_width,
                     seed=event.event_id.int & 0xFFFFFFFF,
                     glitch_characters=glitch_characters,
-                    settle_width=settle_width,
                     inline_glitch_chance=inline_glitch_chance,
+                    frames_per_second=frames_per_second,
                 ),
             )
 
-        registrar.register_display_decorator("terminal-reveal", decorate)
+        registrar.register_presentation_decorator("terminal-reveal", present)
 
 
 plugin = TerminalRevealPlugin()

@@ -220,7 +220,9 @@ all. Other source style attributes remain active in dynamic mode.
 timing. The original event, logs, retained text, wrapping geometry, and copied
 text remain unchanged. Enabling this plugin with no `rules` configured (or no
 `speaker_effects` configuration at all) loads successfully and decorates
-nothing, so it is safe to include in a default enabled list.
+nothing, so it is safe to include in a default enabled list. Every speaker
+effect is projected through the bounded portable presentation DSL, so the TUI
+and PWA share the same named presets and fallback behavior.
 
 See [SPEAKER-EFFECTS.md](SPEAKER-EFFECTS.md) for every available effect, what
 it looks like, and the parameters it accepts.
@@ -232,6 +234,8 @@ framing; 300 baud therefore displays about 15 characters per second. Rendering
 is capped by `frames_per_second`, which must not exceed 30. Each line gets a
 stable deterministic speed adjustment within `speed_variation`; the default
 `0.25` varies effective line speed from 75% to 125% of the configured baud rate.
+The reveal is a portable presentation program and renders in both the TUI and
+PWA; reduced-motion clients receive the complete original line immediately.
 
 Use `glitch_width`, `glitch_characters`, and `glitch_color` to control the edge.
 The three newest cells glitch in white by default; `settle_width` controls the
@@ -247,7 +251,7 @@ chance is `0.05`; use `0` to disable inline glitches.
 Optional `worlds` and `kinds` lists restrict which incoming events are affected.
 Lines longer than `maximum_characters` are shown immediately, and long eligible
 lines accelerate as needed to finish within `maximum_duration_seconds`; their
-hard limits are 16,384 characters and 30 seconds. Intermediate reveal state is
+hard limits are 4,096 characters and 30 seconds. Intermediate reveal state is
 quantized to the configured frame rate even when unrelated UI activity causes
 extra redraws; final completion still occurs at the calculated duration.
 The complete original line is retained immediately for logs, wrapping,

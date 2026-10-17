@@ -3,23 +3,34 @@ from __future__ import annotations
 import math
 import re
 from collections.abc import Mapping, Sequence
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from typing import Any
 
 from tfr.plugin_api import (
     PLUGIN_API_VERSION,
+    EffectProgram,
     Event,
     EventKind,
     PluginRegistrar,
     PluginRegistrationError,
+    PresentationStyle,
+    SweepTrailMode,
     TextDecoration,
     TextEffectKind,
+    character_hue_wave,
+    character_palette_front,
+    character_sparkle,
+    character_style_sweep,
+    character_sweep,
+    color_pulse,
     derive_bright_color,
+    foreground_transition,
     terminal_plain_text,
     validate_color,
 )
 
 _SUPPORTED_KINDS = frozenset({EventKind.SAY, EventKind.POSE})
+_CYLON = "cylon"
 _RULE_FIELDS = frozenset(
     {
         "speaker",
@@ -73,13 +84,32 @@ _ACCENT_EFFECTS = {
     TextEffectKind.COLOR_PULSE,
     TextEffectKind.CASE_WAVE,
 }
-_SPEAKER_EFFECTS = frozenset(TextEffectKind) - {TextEffectKind.TERMINAL_REVEAL}
+_SPEAKER_EFFECTS = frozenset(TextEffectKind) - {
+    TextEffectKind.TERMINAL_REVEAL,
+    TextEffectKind.COMBO_PULSE,
+    TextEffectKind.COMBO_FLASH_UPPER,
+    TextEffectKind.COMBO_CYLON,
+    TextEffectKind.COMBO_GODLIKE,
+}
+_PORTABLE_EFFECTS = frozenset((*_SPEAKER_EFFECTS, _CYLON))
+_SHORT_PORTABLE_EFFECTS = frozenset(
+    {
+        TextEffectKind.SHIMMER,
+        TextEffectKind.COMET,
+        TextEffectKind.EMBER,
+        TextEffectKind.FROST,
+        TextEffectKind.RAINBOW_WAVE,
+        TextEffectKind.COLOR_PULSE,
+        TextEffectKind.SPARKLE,
+        _CYLON,
+    }
+)
 
 
 @dataclass(frozen=True, slots=True)
 class SpeakerRule:
     speaker: str
-    effect: TextEffectKind
+    effect: TextEffectKind | str
     color: str
     accent_color: str
     interval_seconds: float
@@ -107,6 +137,176 @@ class SpeakerRule:
             effect_width=self.effect_width,
             sparkle_count=self.sparkle_count,
             seed=event.event_id.int & 0xFFFFFFFF,
+        )
+
+    def presentation(self, start: int, end: int, *, seed: int = 0) -> EffectProgram:
+        repeat_count = min(20, int(300 // self.repeat_seconds)) if self.loop else 1
+        repeat_seconds = self.repeat_seconds if self.loop else self.interval_seconds
+        if self.effect == _CYLON:
+            return character_sweep(
+                start,
+                end,
+                base_color=self.color,
+                head_color=self.accent_color,
+                trail_width=self.effect_width,
+                uppercase_head=True,
+                duration_seconds=self.interval_seconds,
+                repeat_seconds=repeat_seconds,
+                repeat_count=repeat_count,
+                frames_per_second=self.frames_per_second,
+                reduced_motion=PresentationStyle(foreground=self.accent_color, bold=True),
+            )
+        if self.effect is TextEffectKind.SHIMMER:
+            return character_sweep(
+                start,
+                end,
+                base_color=self.color,
+                head_color=self.accent_color,
+                trail_width=self.shimmer_width,
+                start_padding=self.shimmer_width,
+                end_padding=self.shimmer_width,
+                return_to_start=False,
+                duration_seconds=self.interval_seconds,
+                repeat_seconds=repeat_seconds,
+                repeat_count=repeat_count,
+                frames_per_second=self.frames_per_second,
+                reduced_motion=PresentationStyle(foreground=self.accent_color, bold=True),
+            )
+        if self.effect is TextEffectKind.COMET:
+            return character_sweep(
+                start,
+                end,
+                base_color=self.color,
+                head_color=self.accent_color,
+                trail_width=self.effect_width,
+                trail_mode=SweepTrailMode.BEHIND,
+                end_padding=self.effect_width,
+                return_to_start=False,
+                duration_seconds=self.interval_seconds,
+                repeat_seconds=repeat_seconds,
+                repeat_count=repeat_count,
+                frames_per_second=self.frames_per_second,
+                reduced_motion=PresentationStyle(foreground=self.accent_color, bold=True),
+            )
+        if self.effect is TextEffectKind.RAINBOW_WAVE:
+            return character_hue_wave(
+                start,
+                end,
+                base_color=self.color,
+                duration_seconds=self.interval_seconds,
+                repeat_seconds=repeat_seconds,
+                repeat_count=repeat_count,
+                frames_per_second=self.frames_per_second,
+                reduced_motion=PresentationStyle(foreground=self.color, bold=True),
+            )
+        if self.effect is TextEffectKind.EMBER:
+            return character_palette_front(
+                start,
+                end,
+                colors=("#ffff5f", "#ffaf00", "#ff5f00", "#d70000", self.color),
+                duration_seconds=self.interval_seconds,
+                repeat_seconds=repeat_seconds,
+                repeat_count=repeat_count,
+                frames_per_second=self.frames_per_second,
+                reduced_motion=PresentationStyle(foreground="#ffaf00", bold=True),
+            )
+        if self.effect is TextEffectKind.SPARKLE:
+            return character_sparkle(
+                start,
+                end,
+                base_color=self.color,
+                accent_color=self.accent_color,
+                count=self.sparkle_count,
+                seed=seed,
+                duration_seconds=self.interval_seconds,
+                repeat_seconds=repeat_seconds,
+                repeat_count=repeat_count,
+                frames_per_second=self.frames_per_second,
+            )
+        if self.effect is TextEffectKind.FROST:
+            return character_sweep(
+                start,
+                end,
+                base_color=self.color,
+                head_color=self.accent_color,
+                trail_width=self.effect_width,
+                trail_mode=SweepTrailMode.BEHIND,
+                end_padding=self.effect_width + 1,
+                fill_behind=True,
+                return_to_start=True,
+                duration_seconds=self.interval_seconds,
+                repeat_seconds=repeat_seconds,
+                repeat_count=repeat_count,
+                frames_per_second=self.frames_per_second,
+                reduced_motion=PresentationStyle(foreground=self.accent_color, bold=True),
+            )
+        if self.effect in {TextEffectKind.CAPITALIZATION_ROLL, TextEffectKind.CASE_WAVE}:
+            width = 0.5 if self.effect is TextEffectKind.CAPITALIZATION_ROLL else self.effect_width
+            return character_style_sweep(
+                start,
+                end,
+                base_style=PresentationStyle(foreground=self.color),
+                active_style=PresentationStyle(foreground=self.accent_color),
+                width=width,
+                trail_mode=(
+                    SweepTrailMode.SYMMETRIC
+                    if self.effect is TextEffectKind.CAPITALIZATION_ROLL
+                    else SweepTrailMode.AHEAD
+                ),
+                end_padding=1,
+                uppercase_active=True,
+                lowercase_inactive=True,
+                stepped=True,
+                duration_seconds=self.interval_seconds * (end - start),
+                repeat_seconds=repeat_seconds,
+                repeat_count=repeat_count,
+                frames_per_second=self.frames_per_second,
+            )
+        if self.effect in {
+            TextEffectKind.UNDERLINE_SWEEP,
+            TextEffectKind.BOLD_SWEEP,
+            TextEffectKind.REVERSE_SWEEP,
+        }:
+            active = PresentationStyle(
+                foreground=self.color,
+                bold=self.effect is TextEffectKind.BOLD_SWEEP,
+                underline=self.effect is TextEffectKind.UNDERLINE_SWEEP,
+                reverse=self.effect is TextEffectKind.REVERSE_SWEEP,
+            )
+            return character_style_sweep(
+                start,
+                end,
+                base_style=PresentationStyle(foreground=self.color),
+                active_style=active,
+                width=self.effect_width,
+                end_padding=self.effect_width,
+                duration_seconds=self.interval_seconds,
+                repeat_seconds=repeat_seconds,
+                repeat_count=repeat_count,
+                frames_per_second=self.frames_per_second,
+            )
+        if self.effect is TextEffectKind.AGE_DECAY:
+            return foreground_transition(
+                start,
+                end,
+                start_color=self.accent_color,
+                end_color=self.color,
+                duration_seconds=self.interval_seconds,
+                repeat_seconds=repeat_seconds,
+                repeat_count=repeat_count,
+            )
+        return replace(
+            color_pulse(
+                start,
+                end,
+                base_color=self.color,
+                accent_color=self.accent_color,
+                duration_seconds=self.interval_seconds,
+                repeat_seconds=repeat_seconds,
+                repeat_count=repeat_count,
+                reduced_motion=PresentationStyle(foreground=self.accent_color, bold=True),
+            ),
+            frames_per_second=self.frames_per_second,
         )
 
 
@@ -159,18 +359,23 @@ def _parse_rule(value: object) -> SpeakerRule:
     speaker = value.get("speaker")
     if not isinstance(speaker, str) or not speaker.strip():
         raise PluginRegistrationError("speaker effect speaker must be a non-empty string")
+    effect_value = value.get("effect")
     try:
-        effect = TextEffectKind(value.get("effect"))
+        effect = _CYLON if effect_value == _CYLON else TextEffectKind(effect_value)
     except (TypeError, ValueError) as exc:
-        supported = ", ".join(effect.value for effect in _SPEAKER_EFFECTS)
+        supported = ", ".join(sorted((*[item.value for item in _SPEAKER_EFFECTS], _CYLON)))
         raise PluginRegistrationError(
             f"unsupported speaker effect; choose from {supported}"
         ) from exc
-    if effect not in _SPEAKER_EFFECTS:
-        supported = ", ".join(candidate.value for candidate in _SPEAKER_EFFECTS)
+    if effect != _CYLON and effect not in _SPEAKER_EFFECTS:
+        supported = ", ".join(sorted((*[item.value for item in _SPEAKER_EFFECTS], _CYLON)))
         raise PluginRegistrationError(f"unsupported speaker effect; choose from {supported}")
     try:
-        if effect is TextEffectKind.AGE_DECAY:
+        if effect == _CYLON:
+            if "end_color" in value:
+                raise PluginRegistrationError("end_color is supported only by age_decay")
+            color = validate_color(value.get("color", "#180000"))
+        elif effect is TextEffectKind.AGE_DECAY:
             if "color" in value:
                 raise PluginRegistrationError("age_decay uses end_color instead of color")
             color = validate_color(value.get("end_color"))
@@ -178,13 +383,16 @@ def _parse_rule(value: object) -> SpeakerRule:
             if "end_color" in value:
                 raise PluginRegistrationError("end_color is supported only by age_decay")
             color = validate_color(value.get("color"))
-        if "accent_color" in value and effect not in _ACCENT_EFFECTS:
+        if "accent_color" in value and effect not in {*_ACCENT_EFFECTS, _CYLON}:
             raise PluginRegistrationError("accent_color is not supported by this effect")
         accent_value = value.get("accent_color")
         if accent_value is None:
-            accent_color = (
-                "#d7ffff" if effect is TextEffectKind.FROST else derive_bright_color(color)
-            )
+            if effect == _CYLON:
+                accent_color = "#ff0000"
+            else:
+                accent_color = (
+                    "#d7ffff" if effect is TextEffectKind.FROST else derive_bright_color(color)
+                )
         else:
             accent_color = validate_color(accent_value)
     except ValueError as exc:
@@ -210,9 +418,12 @@ def _parse_rule(value: object) -> SpeakerRule:
         raise PluginRegistrationError(
             "step_seconds is supported only by capitalization_roll and case_wave"
         )
-    if "duration_seconds" in value and effect not in _DURATION_DEFAULTS:
+    if "duration_seconds" in value and effect not in {*_DURATION_DEFAULTS, _CYLON}:
         raise PluginRegistrationError("duration_seconds is not supported by this effect")
-    if effect is TextEffectKind.SHIMMER:
+    if effect == _CYLON:
+        interval = _number(value.get("duration_seconds"), "duration_seconds", default=2.0)
+        burst_duration = interval
+    elif effect is TextEffectKind.SHIMMER:
         interval = _number(value.get("period_seconds"), "period_seconds", default=1.4)
         burst_duration = interval
     elif effect in _STEPPED_EFFECTS:
@@ -233,10 +444,18 @@ def _parse_rule(value: object) -> SpeakerRule:
     )
     if not loop and "repeat_seconds" in value:
         raise PluginRegistrationError("repeat_seconds is supported only when loop is true")
-    repeat_seconds = _number(value.get("repeat_seconds"), "repeat_seconds", default=10.0)
-    if loop and repeat_seconds <= burst_duration:
+    repeat_seconds = _number(
+        value.get("repeat_seconds"),
+        "repeat_seconds",
+        default=2.0 if effect == _CYLON else 10.0,
+    )
+    if loop and (
+        repeat_seconds < burst_duration if effect == _CYLON else repeat_seconds <= burst_duration
+    ):
         raise PluginRegistrationError(
-            "speaker effect repeat_seconds must exceed its burst duration"
+            "speaker effect repeat_seconds must not be shorter than its burst duration"
+            if effect == _CYLON
+            else "speaker effect repeat_seconds must exceed its burst duration"
         )
     frames_per_second = _number(
         value.get("frames_per_second"),
@@ -249,20 +468,47 @@ def _parse_rule(value: object) -> SpeakerRule:
         )
     if frames_per_second > 30:
         raise PluginRegistrationError("speaker effect frames_per_second cannot exceed 30")
+    if effect in _SHORT_PORTABLE_EFFECTS:
+        if not 1 <= interval <= 3:
+            raise PluginRegistrationError(
+                f"{effect.value if isinstance(effect, TextEffectKind) else effect} "
+                "duration_seconds must be between 1 and 3"
+            )
+        if loop and repeat_seconds > 60:
+            raise PluginRegistrationError(
+                f"{effect.value if isinstance(effect, TextEffectKind) else effect} "
+                "repeat_seconds must be between 1 and 60"
+            )
+        if frames_per_second > 20:
+            raise PluginRegistrationError(
+                f"{effect.value if isinstance(effect, TextEffectKind) else effect} "
+                "frames_per_second cannot exceed 20"
+            )
+    if effect in _PORTABLE_EFFECTS:
+        if burst_duration > 30:
+            raise PluginRegistrationError("speaker effect duration cannot exceed 30 seconds")
+        if loop and repeat_seconds > 60:
+            raise PluginRegistrationError("speaker effect repeat_seconds cannot exceed 60 seconds")
     shimmer_width = _number(value.get("shimmer_width"), "shimmer_width", default=1.5)
     if "shimmer_width" in value and effect is not TextEffectKind.SHIMMER:
         raise PluginRegistrationError("shimmer_width is supported only by shimmer")
-    if "trail_width" in value and effect is not TextEffectKind.COMET:
-        raise PluginRegistrationError("trail_width is supported only by comet")
+    if effect is TextEffectKind.SHIMMER and shimmer_width > 8:
+        raise PluginRegistrationError("shimmer shimmer_width cannot exceed 8")
+    if "trail_width" in value and effect not in {TextEffectKind.COMET, _CYLON}:
+        raise PluginRegistrationError("trail_width is supported only by comet and cylon")
     if "sparkle_count" in value and effect is not TextEffectKind.SPARKLE:
         raise PluginRegistrationError("sparkle_count is supported only by sparkle")
     if "wave_width" in value and effect not in _WAVE_WIDTH_EFFECTS:
         raise PluginRegistrationError("wave_width is not supported by this effect")
     effect_width = _integer(
-        value.get("trail_width") if effect is TextEffectKind.COMET else value.get("wave_width"),
-        "trail_width" if effect is TextEffectKind.COMET else "wave_width",
+        (
+            value.get("trail_width")
+            if effect in {TextEffectKind.COMET, _CYLON}
+            else value.get("wave_width")
+        ),
+        "trail_width" if effect in {TextEffectKind.COMET, _CYLON} else "wave_width",
         default=3 if effect is TextEffectKind.COMET else 2,
-        maximum=20,
+        maximum=8 if effect in {_CYLON, TextEffectKind.COMET} else 20,
     )
     sparkle_count = _integer(
         value.get("sparkle_count"),
@@ -287,7 +533,13 @@ def _parse_rule(value: object) -> SpeakerRule:
     )
 
 
-def _speaker_span(event: Event, text: str, speaker: str) -> tuple[int, int] | None:
+def _speaker_span(
+    event: Event,
+    text: str,
+    speaker: str,
+    *,
+    inferred_pose: bool = False,
+) -> tuple[int, int] | None:
     plain = terminal_plain_text(text)
     prefix_end = plain.find("] ") if plain.startswith("[") else -1
     start = prefix_end + 2 if prefix_end >= 0 else 0
@@ -298,10 +550,13 @@ def _speaker_span(event: Event, text: str, speaker: str) -> tuple[int, int] | No
         return None
     if end < len(plain) and (plain[end].isalnum() or plain[end] == "_"):
         return None
+    remainder = plain[end:].lstrip()
+    say_prefix = re.match(r"says?,", remainder, re.IGNORECASE)
     if event.kind is EventKind.SAY:
-        remainder = plain[end:].lstrip()
-        if re.match(r"says?,", remainder, re.IGNORECASE) is None:
+        if say_prefix is None:
             return None
+    elif inferred_pose and say_prefix is not None:
+        return None
     return start, end
 
 
@@ -323,24 +578,43 @@ class SpeakerEffectsPlugin:
             # enabling this plugin without configuration is a harmless no-op.
             return
 
-        def decorate(event: Event, text: str) -> tuple[TextDecoration, ...]:
-            decorations: list[TextDecoration] = []
+        def matching_rule(event: Event, text: str) -> tuple[SpeakerRule, int, int] | None:
             sender = event.provenance.sender_name if event.provenance is not None else None
             for rule in rules:
-                if event.kind not in rule.kinds:
+                inferred_pose = (
+                    EventKind.POSE in rule.kinds
+                    and event.kind in {EventKind.RAW_OUTPUT, EventKind.SPEECH}
+                    and sender is not None
+                    and sender.casefold() == rule.speaker.casefold()
+                )
+                if event.kind not in rule.kinds and not inferred_pose:
                     continue
                 if rule.worlds is not None and event.world.casefold() not in rule.worlds:
                     continue
                 if sender is not None and sender.casefold() != rule.speaker.casefold():
                     continue
-                span = _speaker_span(event, text, rule.speaker)
+                span = _speaker_span(event, text, rule.speaker, inferred_pose=inferred_pose)
                 if span is None:
                     continue
-                decorations.append(rule.decoration(event, *span))
-                break
-            return tuple(decorations)
+                return rule, *span
+            return None
+
+        def decorate(event: Event, text: str) -> tuple[TextDecoration, ...]:
+            match = matching_rule(event, text)
+            if match is None or match[0].effect in _PORTABLE_EFFECTS:
+                return ()
+            rule, start, end = match
+            return (rule.decoration(event, start, end),)
+
+        def present(event: Event, text: str) -> tuple[EffectProgram, ...]:
+            match = matching_rule(event, text)
+            if match is None or match[0].effect not in _PORTABLE_EFFECTS:
+                return ()
+            rule, start, end = match
+            return (rule.presentation(start, end, seed=event.event_id.int & 0xFFFFFFFF),)
 
         registrar.register_display_decorator("speaker-effects", decorate)
+        registrar.register_presentation_decorator("speaker-effects", present)
 
 
 plugin = SpeakerEffectsPlugin()
