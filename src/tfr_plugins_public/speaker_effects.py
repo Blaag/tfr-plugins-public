@@ -19,9 +19,12 @@ from tfr.plugin_api import (
     TextEffectKind,
     character_hue_wave,
     character_palette_front,
+    character_sparkle,
+    character_style_sweep,
     character_sweep,
     color_pulse,
     derive_bright_color,
+    foreground_transition,
     terminal_plain_text,
     validate_color,
 )
@@ -88,13 +91,16 @@ _SPEAKER_EFFECTS = frozenset(TextEffectKind) - {
     TextEffectKind.COMBO_CYLON,
     TextEffectKind.COMBO_GODLIKE,
 }
-_PORTABLE_EFFECTS = frozenset(
+_PORTABLE_EFFECTS = frozenset((*_SPEAKER_EFFECTS, _CYLON))
+_SHORT_PORTABLE_EFFECTS = frozenset(
     {
         TextEffectKind.SHIMMER,
         TextEffectKind.COMET,
         TextEffectKind.EMBER,
+        TextEffectKind.FROST,
         TextEffectKind.RAINBOW_WAVE,
         TextEffectKind.COLOR_PULSE,
+        TextEffectKind.SPARKLE,
         _CYLON,
     }
 )
@@ -133,7 +139,7 @@ class SpeakerRule:
             seed=event.event_id.int & 0xFFFFFFFF,
         )
 
-    def presentation(self, start: int, end: int) -> EffectProgram:
+    def presentation(self, start: int, end: int, *, seed: int = 0) -> EffectProgram:
         repeat_count = min(20, int(300 // self.repeat_seconds)) if self.loop else 1
         repeat_seconds = self.repeat_seconds if self.loop else self.interval_seconds
         if self.effect == _CYLON:
@@ -203,6 +209,91 @@ class SpeakerRule:
                 repeat_count=repeat_count,
                 frames_per_second=self.frames_per_second,
                 reduced_motion=PresentationStyle(foreground="#ffaf00", bold=True),
+            )
+        if self.effect is TextEffectKind.SPARKLE:
+            return character_sparkle(
+                start,
+                end,
+                base_color=self.color,
+                accent_color=self.accent_color,
+                count=self.sparkle_count,
+                seed=seed,
+                duration_seconds=self.interval_seconds,
+                repeat_seconds=repeat_seconds,
+                repeat_count=repeat_count,
+                frames_per_second=self.frames_per_second,
+            )
+        if self.effect is TextEffectKind.FROST:
+            return character_sweep(
+                start,
+                end,
+                base_color=self.color,
+                head_color=self.accent_color,
+                trail_width=self.effect_width,
+                trail_mode=SweepTrailMode.BEHIND,
+                end_padding=self.effect_width + 1,
+                fill_behind=True,
+                return_to_start=True,
+                duration_seconds=self.interval_seconds,
+                repeat_seconds=repeat_seconds,
+                repeat_count=repeat_count,
+                frames_per_second=self.frames_per_second,
+                reduced_motion=PresentationStyle(foreground=self.accent_color, bold=True),
+            )
+        if self.effect in {TextEffectKind.CAPITALIZATION_ROLL, TextEffectKind.CASE_WAVE}:
+            width = 0.5 if self.effect is TextEffectKind.CAPITALIZATION_ROLL else self.effect_width
+            return character_style_sweep(
+                start,
+                end,
+                base_style=PresentationStyle(foreground=self.color),
+                active_style=PresentationStyle(foreground=self.accent_color),
+                width=width,
+                trail_mode=(
+                    SweepTrailMode.SYMMETRIC
+                    if self.effect is TextEffectKind.CAPITALIZATION_ROLL
+                    else SweepTrailMode.AHEAD
+                ),
+                end_padding=1,
+                uppercase_active=True,
+                lowercase_inactive=True,
+                stepped=True,
+                duration_seconds=self.interval_seconds * (end - start),
+                repeat_seconds=repeat_seconds,
+                repeat_count=repeat_count,
+                frames_per_second=self.frames_per_second,
+            )
+        if self.effect in {
+            TextEffectKind.UNDERLINE_SWEEP,
+            TextEffectKind.BOLD_SWEEP,
+            TextEffectKind.REVERSE_SWEEP,
+        }:
+            active = PresentationStyle(
+                foreground=self.color,
+                bold=self.effect is TextEffectKind.BOLD_SWEEP,
+                underline=self.effect is TextEffectKind.UNDERLINE_SWEEP,
+                reverse=self.effect is TextEffectKind.REVERSE_SWEEP,
+            )
+            return character_style_sweep(
+                start,
+                end,
+                base_style=PresentationStyle(foreground=self.color),
+                active_style=active,
+                width=self.effect_width,
+                end_padding=self.effect_width,
+                duration_seconds=self.interval_seconds,
+                repeat_seconds=repeat_seconds,
+                repeat_count=repeat_count,
+                frames_per_second=self.frames_per_second,
+            )
+        if self.effect is TextEffectKind.AGE_DECAY:
+            return foreground_transition(
+                start,
+                end,
+                start_color=self.accent_color,
+                end_color=self.color,
+                duration_seconds=self.interval_seconds,
+                repeat_seconds=repeat_seconds,
+                repeat_count=repeat_count,
             )
         return replace(
             color_pulse(
@@ -359,9 +450,7 @@ def _parse_rule(value: object) -> SpeakerRule:
         default=2.0 if effect == _CYLON else 10.0,
     )
     if loop and (
-        repeat_seconds < burst_duration
-        if effect == _CYLON
-        else repeat_seconds <= burst_duration
+        repeat_seconds < burst_duration if effect == _CYLON else repeat_seconds <= burst_duration
     ):
         raise PluginRegistrationError(
             "speaker effect repeat_seconds must not be shorter than its burst duration"
@@ -379,7 +468,7 @@ def _parse_rule(value: object) -> SpeakerRule:
         )
     if frames_per_second > 30:
         raise PluginRegistrationError("speaker effect frames_per_second cannot exceed 30")
-    if effect in _PORTABLE_EFFECTS:
+    if effect in _SHORT_PORTABLE_EFFECTS:
         if not 1 <= interval <= 3:
             raise PluginRegistrationError(
                 f"{effect.value if isinstance(effect, TextEffectKind) else effect} "
@@ -395,6 +484,11 @@ def _parse_rule(value: object) -> SpeakerRule:
                 f"{effect.value if isinstance(effect, TextEffectKind) else effect} "
                 "frames_per_second cannot exceed 20"
             )
+    if effect in _PORTABLE_EFFECTS:
+        if burst_duration > 30:
+            raise PluginRegistrationError("speaker effect duration cannot exceed 30 seconds")
+        if loop and repeat_seconds > 60:
+            raise PluginRegistrationError("speaker effect repeat_seconds cannot exceed 60 seconds")
     shimmer_width = _number(value.get("shimmer_width"), "shimmer_width", default=1.5)
     if "shimmer_width" in value and effect is not TextEffectKind.SHIMMER:
         raise PluginRegistrationError("shimmer_width is supported only by shimmer")
@@ -517,7 +611,7 @@ class SpeakerEffectsPlugin:
             if match is None or match[0].effect not in _PORTABLE_EFFECTS:
                 return ()
             rule, start, end = match
-            return (rule.presentation(start, end),)
+            return (rule.presentation(start, end, seed=event.event_id.int & 0xFFFFFFFF),)
 
         registrar.register_display_decorator("speaker-effects", decorate)
         registrar.register_presentation_decorator("speaker-effects", present)

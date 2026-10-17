@@ -8,7 +8,6 @@ import pytest
 from tfr.core import CommandBus, EventBus
 from tfr.events import Direction, Event, EventKind
 from tfr.plugins import PluginManager
-from tfr.text_effects import TextEffectKind
 
 from tfr_plugins_public.terminal_reveal import plugin
 
@@ -55,24 +54,25 @@ async def load(config: dict[str, object]) -> PluginManager:
     )
 
 
-async def test_default_configuration_models_1200_baud_serial_text() -> None:
+async def test_default_configuration_models_9600_baud_serial_text() -> None:
     manager = await load({})
     incoming = event("\x1b[1mhello\x1b[0m\n")
 
-    decoration = manager.decorate_display(incoming, incoming.display_text or "")[0]
+    program = manager.presentation_programs(incoming, "hello")[0]
+    reveal = program.variants[0].character_reveal
 
-    assert decoration.effect is TextEffectKind.TERMINAL_REVEAL
-    assert decoration.start == 0
-    assert decoration.end == 5
-    assert 1200 * 0.75 <= 20 / decoration.interval_seconds <= 1200 * 1.25
-    assert decoration.frames_per_second == 30
-    assert decoration.effect_width == 3
-    assert decoration.settle_width == 3
-    assert decoration.glitch_characters == ascii_letters + digits + punctuation
-    assert decoration.accent_color == "#ffffff"
-    assert decoration.base_color == "#d7d7d7"
-    assert decoration.seed == 7
-    assert decoration.inline_glitch_chance == 0.35
+    assert reveal is not None
+    assert program.start == 0
+    assert program.end == 5
+    assert 1200 * 0.75 <= 20 / reveal.interval_seconds <= 1200 * 1.25
+    assert program.frames_per_second == 30
+    assert reveal.glitch_width == 3
+    assert reveal.settle_width == 3
+    assert reveal.glitch_characters == ascii_letters + digits + punctuation
+    assert reveal.accent_color == "#ffffff"
+    assert reveal.base_color == "#d7d7d7"
+    assert reveal.seed == 7
+    assert reveal.inline_glitch_chance == 0.35
 
 
 async def test_each_line_gets_a_stable_speed_within_the_configured_variation() -> None:
@@ -81,14 +81,16 @@ async def test_each_line_gets_a_stable_speed_within_the_configured_variation() -
     )
 
     intervals = [
-        manager.decorate_display(event("hello", event_id=event_id), "hello")[0].interval_seconds
+        manager.presentation_programs(event("hello", event_id=event_id), "hello")[0]
+        .variants[0]
+        .character_reveal.interval_seconds
         for event_id in range(1, 9)
     ]
-    repeated = manager.decorate_display(event("hello", event_id=1), "hello")[0]
+    repeated = manager.presentation_programs(event("hello", event_id=1), "hello")[0]
 
     assert len(set(intervals)) > 1
     assert all(300 * 0.75 <= 20 / interval <= 300 * 1.25 for interval in intervals)
-    assert repeated.interval_seconds == intervals[0]
+    assert repeated.variants[0].character_reveal.interval_seconds == intervals[0]
 
 
 async def test_configuration_filters_worlds_and_event_kinds() -> None:
@@ -107,15 +109,24 @@ async def test_configuration_filters_worlds_and_event_kinds() -> None:
         }
     )
 
-    matching = manager.decorate_display(event("hello", kind=EventKind.SAY), "hello")
+    matching = manager.presentation_programs(event("hello", kind=EventKind.SAY), "hello")
+    reveal = matching[0].variants[0].character_reveal
 
-    assert matching[0].interval_seconds == pytest.approx(20 / 1200)
-    assert matching[0].accent_color == "#00ff00"
-    assert matching[0].base_color == "#204060"
-    assert matching[0].glitch_characters == "#%"
-    assert matching[0].inline_glitch_chance == 0.2
-    assert manager.decorate_display(event("hello", kind=EventKind.PAGE), "hello") == ()
-    assert manager.decorate_display(event("hello", kind=EventKind.SAY, world="beta"), "hello") == ()
+    assert reveal.interval_seconds == pytest.approx(20 / 1200)
+    assert reveal.accent_color == "#00ff00"
+    assert reveal.base_color == "#204060"
+    assert reveal.glitch_characters == "#%"
+    assert reveal.inline_glitch_chance == 0.2
+    assert (
+        manager.presentation_programs(event("hello", kind=EventKind.PAGE, event_id=8), "hello")
+        == ()
+    )
+    assert (
+        manager.presentation_programs(
+            event("hello", kind=EventKind.SAY, world="beta", event_id=9), "hello"
+        )
+        == ()
+    )
 
 
 async def test_long_lines_are_bounded_or_accelerated() -> None:
@@ -128,9 +139,9 @@ async def test_long_lines_are_bounded_or_accelerated() -> None:
         }
     )
 
-    assert skipped.decorate_display(event("hello"), "hello") == ()
-    decoration = accelerated.decorate_display(event("abcdefghij"), "abcdefghij")[0]
-    assert decoration.burst_duration_seconds == pytest.approx(0.5)
+    assert skipped.presentation_programs(event("hello"), "hello") == ()
+    program = accelerated.presentation_programs(event("abcdefghij"), "abcdefghij")[0]
+    assert program.duration_seconds == pytest.approx(0.5)
 
 
 @pytest.mark.parametrize(
@@ -144,7 +155,7 @@ async def test_long_lines_are_bounded_or_accelerated() -> None:
         {"inline_glitch_chance": 1.01},
         {"glitch_characters": " "},
         {"trail_color": "gray"},
-        {"maximum_characters": 16_385},
+        {"maximum_characters": 4_097},
         {"maximum_duration_seconds": 31},
         {"kinds": ["not_an_event"]},
         {"unknown": True},
@@ -155,4 +166,4 @@ async def test_invalid_configuration_does_not_register_the_decorator(
 ) -> None:
     manager = await load(config)
 
-    assert manager.registry.display_decorators == {}
+    assert manager.registry.presentation_decorators == {}
