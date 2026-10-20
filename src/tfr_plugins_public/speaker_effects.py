@@ -15,7 +15,6 @@ from tfr.plugin_api import (
     PluginRegistrationError,
     PresentationStyle,
     SweepTrailMode,
-    TextDecoration,
     TextEffectKind,
     character_hue_wave,
     character_palette_front,
@@ -121,23 +120,6 @@ class SpeakerRule:
     sparkle_count: int
     kinds: frozenset[EventKind]
     worlds: frozenset[str] | None
-
-    def decoration(self, event: Event, start: int, end: int) -> TextDecoration:
-        return TextDecoration(
-            start=start,
-            end=end,
-            effect=self.effect,
-            base_color=self.color,
-            accent_color=self.accent_color,
-            interval_seconds=self.interval_seconds,
-            repeat_seconds=self.repeat_seconds,
-            frames_per_second=self.frames_per_second,
-            shimmer_width=self.shimmer_width,
-            loop=self.loop,
-            effect_width=self.effect_width,
-            sparkle_count=self.sparkle_count,
-            seed=event.event_id.int & 0xFFFFFFFF,
-        )
 
     def presentation(self, start: int, end: int, *, seed: int = 0) -> EffectProgram:
         repeat_count = min(20, int(300 // self.repeat_seconds)) if self.loop else 1
@@ -599,13 +581,6 @@ class SpeakerEffectsPlugin:
                 return rule, *span
             return None
 
-        def decorate(event: Event, text: str) -> tuple[TextDecoration, ...]:
-            match = matching_rule(event, text)
-            if match is None or match[0].effect in _PORTABLE_EFFECTS:
-                return ()
-            rule, start, end = match
-            return (rule.decoration(event, start, end),)
-
         def present(event: Event, text: str) -> tuple[EffectProgram, ...]:
             match = matching_rule(event, text)
             if match is None or match[0].effect not in _PORTABLE_EFFECTS:
@@ -613,7 +588,6 @@ class SpeakerEffectsPlugin:
             rule, start, end = match
             return (rule.presentation(start, end, seed=event.event_id.int & 0xFFFFFFFF),)
 
-        registrar.register_display_decorator("speaker-effects", decorate)
         registrar.register_presentation_decorator("speaker-effects", present)
 
 

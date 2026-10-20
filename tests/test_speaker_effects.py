@@ -469,6 +469,7 @@ async def test_color_pulse_uses_portable_presentation_in_ui_and_gateway() -> Non
             scope=scope,
         )
 
+        assert plugins.registry.display_decorators == {}
         assert plugins.decorate_display(event, event.display_text or "") == ()
         program = plugins.presentation_programs(event, "Alice says, hello")[0]
         assert (program.start, program.end) == (0, 5)
