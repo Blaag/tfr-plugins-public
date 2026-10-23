@@ -64,15 +64,15 @@ def _ripple_cell(character: str, local_progress: float) -> tuple[str, str] | Non
     if local_progress < 0.12:
         return "bold fg:#d7ffff", character
     if local_progress < 0.28:
-        return "fg:#87d7ff", "█"
+        return "fg:#87d7ff", character
     if local_progress < 0.45:
-        return "fg:#5fafff", "▓"
+        return "fg:#5fafff", character
     if local_progress < 0.62:
-        return "fg:#5f87d7", "▒"
+        return "fg:#5f87d7", character
     if local_progress < 0.79:
-        return "fg:#5f5faf", "░"
+        return "fg:#5f5faf", character
     if local_progress < 0.9:
-        return "fg:#30305f", "."
+        return "fg:#30305f", character
     return None
 
 

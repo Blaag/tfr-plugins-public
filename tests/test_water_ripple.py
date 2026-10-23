@@ -50,17 +50,17 @@ def test_water_ripple_starts_with_source_text_and_finishes_empty() -> None:
 def test_ripple_dissolves_from_the_center_outward() -> None:
     lines = ("AAAAAAAAA",) * 5
 
-    rendered = fragment_list_to_text(render_water_ripple(context(lines, 9, 0.2))).split("\n")
+    rendered = fragment_list_to_text(render_water_ripple(context(lines, 9, 0.92))).split("\n")
 
     assert rendered[0][0] == "A"
-    assert rendered[2][4] != "A"
-    assert rendered[2][4] in "█▓▒░."
+    assert rendered[2][4] == " "
 
 
-def test_ripple_uses_decreasing_density_glyphs() -> None:
+def test_ripple_recolors_characters_without_replacing_them() -> None:
     stages = [_ripple_cell("A", progress) for progress in (0.05, 0.2, 0.36, 0.53, 0.7, 0.85)]
 
-    assert [stage[1] for stage in stages if stage is not None] == ["A", "█", "▓", "▒", "░", "."]
+    assert [stage[1] for stage in stages if stage is not None] == ["A"] * 6
+    assert len({stage[0] for stage in stages if stage is not None}) == 6
     assert all("fg:#" in stage[0] for stage in stages if stage is not None)
 
 

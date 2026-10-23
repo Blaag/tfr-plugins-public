@@ -109,23 +109,54 @@ def _fire_cell(intensity: int) -> tuple[str, str] | None:
 class _FireState:
     intensities: list[int]
     burned: list[bool]
+    fuel_starts: list[int]
+    fuel_ends: list[int]
+    fuel_intensities: list[int]
     frame: int = 0
 
 
-def _new_state(width: int, height: int) -> _FireState:
-    intensities = [0] * (width * (height + 1))
-    for column in range(width):
-        intensities[height * width + column] = _MAX_INTENSITY
-    return _FireState(intensities, [False] * (width * height))
+def _new_state(context: ScreenClearContext, total_frames: int) -> _FireState:
+    width = context.width
+    height = len(context.lines)
+    cell_count = width * height
+    fuel = [False] * cell_count
+    for row, column, character_width, character, _style in _source_cells(context):
+        if character.isspace():
+            continue
+        for occupied_column in range(column, column + character_width):
+            fuel[row * width + occupied_column] = True
 
+    occupied_rows = [index // width for index, occupied in enumerate(fuel) if occupied]
+    fuel_count = len(occupied_rows)
+    bottom_row = max(occupied_rows, default=0)
+    row_span = max(1, bottom_row - min(occupied_rows, default=bottom_row))
+    fuel_starts = [0] * cell_count
+    fuel_ends = [0] * cell_count
+    fuel_intensities = [0] * cell_count
+    for index, occupied in enumerate(fuel):
+        if not occupied:
+            continue
+        row, column = divmod(index, width)
+        height_delay = (bottom_row - row) / row_span
+        ignition_jitter = (_noise(context.seed, 0, 0, row, column) & 0xFFFF) / 0xFFFF
+        burn_jitter = (_noise(context.seed, 0, 1, row, column) & 0xFFFF) / 0xFFFF
+        start = round(total_frames * (0.01 + height_delay * 0.58 + ignition_jitter * 0.08))
+        sparse_fuel_extension = 0.3 / math.sqrt(max(1, fuel_count))
+        lifetime = max(
+            2,
+            round(total_frames * (0.025 + burn_jitter * 0.025 + sparse_fuel_extension)),
+        )
+        fuel_starts[index] = max(1, start)
+        fuel_ends[index] = fuel_starts[index] + lifetime
+        fuel_intensities[index] = 24 + round(burn_jitter * (_MAX_INTENSITY - 24))
 
-def _source_intensity(frame: int, total_frames: int) -> int:
-    progress = frame / max(1, total_frames)
-    if progress <= 0.56:
-        return _MAX_INTENSITY
-    if progress >= 0.72:
-        return 0
-    return round(_MAX_INTENSITY * (0.72 - progress) / 0.16)
+    return _FireState(
+        [0] * (width * (height + 1)),
+        [False] * cell_count,
+        fuel_starts,
+        fuel_ends,
+        fuel_intensities,
+    )
 
 
 def _advance_generation(
@@ -136,14 +167,10 @@ def _advance_generation(
     seed: int,
     frame: int,
     generation: int,
-    source_intensity: int,
+    total_frames: int,
 ) -> None:
     previous = state.intensities
     values = [0] * len(previous)
-    source_row = height * width
-    for column in range(width):
-        flicker = _noise(seed, frame, generation, height, column) % 5
-        values[source_row + column] = max(0, source_intensity - flicker)
 
     for row in range(height):
         below_row = (row + 1) * width
@@ -152,12 +179,22 @@ def _advance_generation(
             noise = _noise(seed, frame, generation, row, column)
             source_column = min(width - 1, max(0, column + (noise % 3) - 1))
             decay = (noise >> 3) & 1
-            if source_intensity == 0:
+            if frame / max(1, total_frames) >= 0.68:
                 decay += 1
             intensity = max(0, previous[below_row + source_column] - decay)
             values[target_row + column] = intensity
             if intensity >= 4:
                 state.burned[target_row + column] = True
+
+    for index, maximum_intensity in enumerate(state.fuel_intensities):
+        if not maximum_intensity or not state.fuel_starts[index] <= frame < state.fuel_ends[index]:
+            continue
+        lifetime = state.fuel_ends[index] - state.fuel_starts[index]
+        remaining = state.fuel_ends[index] - frame
+        intensity = max(4, round(maximum_intensity * remaining / lifetime))
+        flicker = _noise(seed, frame, generation, index // width, index % width) % 4
+        values[index] = max(values[index], intensity - flicker)
+        state.burned[index] = True
     state.intensities = values
 
 
@@ -204,7 +241,7 @@ class _DoomFireRenderer:
         height = len(context.lines)
         if height == 0 or context.width < 1:
             self._key = (context.lines, context.styled_lines, context.width, context.seed)
-            self._state = _new_state(max(1, context.width), 0)
+            self._state = _new_state(context, 1)
             return []
         key = (context.lines, context.styled_lines, context.width, context.seed)
         elapsed_seconds = (
@@ -216,12 +253,11 @@ class _DoomFireRenderer:
         target_frame = min(total_frames, max(0, int(elapsed_seconds * self.frames_per_second)))
         if self._key != key or self._state is None or target_frame < self._state.frame:
             self._key = key
-            self._state = _new_state(context.width, height)
+            self._state = _new_state(context, total_frames)
 
         generations_per_frame = max(1, math.ceil(height / max(1, total_frames * 0.5)))
         while self._state.frame < target_frame:
             next_frame = self._state.frame + 1
-            source_intensity = _source_intensity(next_frame, total_frames)
             for generation in range(generations_per_frame):
                 _advance_generation(
                     self._state,
@@ -230,7 +266,7 @@ class _DoomFireRenderer:
                     seed=context.seed,
                     frame=next_frame,
                     generation=generation,
-                    source_intensity=source_intensity,
+                    total_frames=total_frames,
                 )
             self._state.frame = next_frame
 

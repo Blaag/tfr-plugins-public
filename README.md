@@ -222,7 +222,11 @@ text remain unchanged. Enabling this plugin with no `rules` configured (or no
 `speaker_effects` configuration at all) loads successfully and decorates
 nothing, so it is safe to include in a default enabled list. Every speaker
 effect is projected through the bounded portable presentation DSL, so the TUI
-and PWA share the same named presets and fallback behavior.
+and PWA share primitive semantics and fallback behavior. For remote sessions,
+configure this plugin on the Gateway: attached UIs consume the validated program
+and do not reevaluate a local copy. Screen-clear and border plugins remain local
+to each UI because they act on that client's viewport rather than Gateway event
+text.
 
 See [SPEAKER-EFFECTS.md](SPEAKER-EFFECTS.md) for every available effect, what
 it looks like, and the parameters it accepts.
