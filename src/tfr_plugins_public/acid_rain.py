@@ -124,15 +124,20 @@ def _collision_schedule(
     column_impacts: dict[int, list[tuple[int, float]]] = {}
     height_scale = max(1, len(context.lines) - 1)
     for column, targets in targets_by_column.items():
-        available = 0.025 + _variation(context.seed, column * 23 + 1) * 0.045
+        ordered_targets = sorted(set(targets))
+        first_row = ordered_targets[0][0]
+        first_impact = (
+            0.045
+            + first_row / height_scale * 0.35
+            + _variation(context.seed, column * 23 + 1) * 0.025
+        )
+        slot = max(0.01, (0.86 - first_impact) / len(ordered_targets))
         impacts: list[tuple[int, float]] = []
-        for order, (row, index) in enumerate(sorted(set(targets))):
-            jitter = _variation(context.seed, column * 1_009 + row * 37 + order) * 0.025
-            natural_arrival = 0.045 + row / height_scale * 0.5 + jitter
-            impact = min(0.72, max(natural_arrival, available))
+        for order, (row, index) in enumerate(ordered_targets):
+            jitter = _variation(context.seed, column * 1_009 + row * 37 + order) * slot * 0.12
+            impact = first_impact + order * slot + jitter
             impacts.append((row, impact))
             impacts_by_index[index] = min(impacts_by_index.get(index, 1.0), impact)
-            available = impact + 0.035 + _variation(context.seed, column * 41 + order) * 0.025
         column_impacts[column] = impacts
 
     return (
@@ -144,8 +149,16 @@ def _collision_schedule(
     )
 
 
-def _burn_duration(seed: int, row: int, column: int, impact: float) -> float:
+def _burn_duration(
+    seed: int,
+    row: int,
+    column: int,
+    impact: float,
+    next_impact: float | None = None,
+) -> float:
     duration = 0.22 + _variation(seed, row * 131 + column * 17 + 3) * 0.08
+    if next_impact is not None:
+        duration = min(duration, max(0.01, (next_impact - impact) * 0.88))
     return min(duration, max(0.01, (1 - impact) / 0.91))
 
 
@@ -220,7 +233,19 @@ def render_acid_rain(
             continue
         seed = context.seed * 1_009 + row * 131 + column * 17 + sum(map(ord, character))
         impact = collision_times[(row, column)]
-        duration = _burn_duration(context.seed, row, column, impact)
+        next_impacts = [
+            next_impact
+            for occupied_column in range(column, column + character_width)
+            for next_row, next_impact in collision_impacts[occupied_column]
+            if next_row > row
+        ]
+        duration = _burn_duration(
+            context.seed,
+            row,
+            column,
+            impact,
+            min(next_impacts, default=None),
+        )
         local_progress = min(1.0, max(0.0, (progress - impact) / duration))
         rendered = _corroded_cell(character, local_progress, _variation(seed, 2))
         if rendered is None:
