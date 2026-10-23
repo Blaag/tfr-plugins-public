@@ -8,6 +8,7 @@ from prompt_toolkit.formatted_text import fragment_list_to_text
 from tfr.plugin_api import PluginRegistrationError, ScreenClearContext, terminal_cell_width
 
 from tfr_plugins_public.acid_rain import (
+    _burn_duration,
     _collision_schedule,
     _corroded_cell,
     _source_cells,
@@ -143,6 +144,11 @@ def test_stacked_characters_receive_sequential_impacts() -> None:
         impacts[(row, 1)] for row in range(4)
     )
     assert len({impacts[(row, 1)] for row in range(4)}) == 4
+    for row in range(3):
+        impact = impacts[(row, 1)]
+        assert impact + _burn_duration(7, row, 1, impact, impacts[(row + 1, 1)]) < impacts[
+            (row + 1, 1)
+        ]
 
 
 def test_acid_rain_is_deterministic_for_a_seed() -> None:
