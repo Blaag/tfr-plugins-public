@@ -109,6 +109,46 @@ def _render_grid(grid: list[list[tuple[str, str] | None]]) -> list[tuple[str, st
     return fragments
 
 
+def _collision_schedule(
+    context: ScreenClearContext,
+    cells: list[tuple[int, int, int, str, str]],
+) -> tuple[dict[tuple[int, int], float], dict[int, list[tuple[int, float]]]]:
+    targets_by_column: dict[int, list[tuple[int, int]]] = {}
+    for index, (row, column, character_width, character, _style) in enumerate(cells):
+        if character.isspace():
+            continue
+        for occupied_column in range(column, column + character_width):
+            targets_by_column.setdefault(occupied_column, []).append((row, index))
+
+    impacts_by_index: dict[int, float] = {}
+    column_impacts: dict[int, list[tuple[int, float]]] = {}
+    height_scale = max(1, len(context.lines) - 1)
+    for column, targets in targets_by_column.items():
+        available = 0.025 + _variation(context.seed, column * 23 + 1) * 0.045
+        impacts: list[tuple[int, float]] = []
+        for order, (row, index) in enumerate(sorted(set(targets))):
+            jitter = _variation(context.seed, column * 1_009 + row * 37 + order) * 0.025
+            natural_arrival = 0.045 + row / height_scale * 0.5 + jitter
+            impact = min(0.72, max(natural_arrival, available))
+            impacts.append((row, impact))
+            impacts_by_index[index] = min(impacts_by_index.get(index, 1.0), impact)
+            available = impact + 0.035 + _variation(context.seed, column * 41 + order) * 0.025
+        column_impacts[column] = impacts
+
+    return (
+        {
+            (cells[index][0], cells[index][1]): impact
+            for index, impact in impacts_by_index.items()
+        },
+        column_impacts,
+    )
+
+
+def _burn_duration(seed: int, row: int, column: int, impact: float) -> float:
+    duration = 0.22 + _variation(seed, row * 131 + column * 17 + 3) * 0.08
+    return min(duration, max(0.01, (1 - impact) / 0.91))
+
+
 def _draw_rain(
     grid: list[list[tuple[str, str] | None]],
     *,
@@ -116,6 +156,7 @@ def _draw_rain(
     seed: int,
     density: float,
     streak_length: int,
+    collision_impacts: dict[int, list[tuple[int, float]]],
 ) -> None:
     if progress <= 0 or progress >= 1 or not grid:
         return
@@ -123,11 +164,29 @@ def _draw_rain(
     width = len(grid[0])
     span = height + streak_length
     for column in range(width):
-        if _variation(seed, column * 11 + 1) > density:
-            continue
-        phase = _variation(seed, column * 11 + 2)
-        cycles = 1.1 + _variation(seed, column * 11 + 3) * 1.4
-        head = math.floor(((progress * cycles + phase) % 1.0) * span) - streak_length
+        impacts = collision_impacts.get(column, ())
+        head: int | None = None
+        if impacts:
+            for row, impact in impacts:
+                travel_duration = 0.1 + row / max(1, height - 1) * 0.1
+                if progress < impact - travel_duration:
+                    continue
+                if progress < impact:
+                    travel = (progress - (impact - travel_duration)) / travel_duration
+                    head = math.floor(-streak_length + travel * (row + streak_length))
+                    break
+                hold = 0.045 + _variation(seed, column * 59 + row) * 0.035
+                if progress < impact + hold:
+                    head = row
+                    break
+            if head is None:
+                continue
+        else:
+            if _variation(seed, column * 11 + 1) > density:
+                continue
+            phase = _variation(seed, column * 11 + 2)
+            cycles = 1.1 + _variation(seed, column * 11 + 3) * 1.4
+            head = math.floor(((progress * cycles + phase) % 1.0) * span) - streak_length
         for offset in range(streak_length):
             row = head - offset
             if not 0 <= row < height or grid[row][column] is not None:
@@ -153,14 +212,16 @@ def render_acid_rain(
     grid: list[list[tuple[str, str] | None]] = [
         [None for _ in range(context.width)] for _ in range(height)
     ]
-    height_scale = max(1, height - 1)
+    source_cells = _source_cells(context)
+    collision_times, collision_impacts = _collision_schedule(context, source_cells)
 
-    for row, column, character_width, character, source_style in _source_cells(context):
+    for row, column, character_width, character, source_style in source_cells:
         if character.isspace():
             continue
         seed = context.seed * 1_009 + row * 131 + column * 17 + sum(map(ord, character))
-        arrival = _variation(seed, 1) * 0.16 + row / height_scale * 0.44
-        local_progress = min(1.0, max(0.0, (progress - arrival) / (1 - arrival)))
+        impact = collision_times[(row, column)]
+        duration = _burn_duration(context.seed, row, column, impact)
+        local_progress = min(1.0, max(0.0, (progress - impact) / duration))
         rendered = _corroded_cell(character, local_progress, _variation(seed, 2))
         if rendered is None:
             continue
@@ -178,6 +239,7 @@ def render_acid_rain(
         seed=context.seed,
         density=density,
         streak_length=streak_length,
+        collision_impacts=collision_impacts,
     )
     return _render_grid(grid)
 

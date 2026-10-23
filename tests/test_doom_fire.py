@@ -52,14 +52,50 @@ def test_doom_fire_starts_with_source_text_and_finishes_empty() -> None:
     assert finished.strip() == ""
 
 
-def test_cellular_fire_ignites_at_the_bottom_and_propagates_upward() -> None:
-    lines = tuple(f"ROW {row} CONTENT" for row in range(8))
+def test_cellular_fire_ignites_from_source_text_and_propagates_upward() -> None:
+    lines = ("", "", "", "        X", "")
 
-    rendered = fragment_list_to_text(render_doom_fire(context(lines, 20, 0.04))).split("\n")
+    rendered = fragment_list_to_text(render_doom_fire(context(lines, 17, 0.18))).split("\n")
 
-    assert rendered[0] == lines[0]
-    assert rendered[-1] != lines[-1]
-    assert any(glyph in rendered[-1] for glyph in ".:*oO#@")
+    assert rendered[-1].strip() == ""
+    assert any(glyph in rendered[3] for glyph in ".:*oO#@")
+    assert any(glyph in rendered[2] for glyph in ".:*oO#@")
+
+
+def test_sparse_source_does_not_create_a_full_width_bottom_fire() -> None:
+    lines = ("", "", "        .", "")
+
+    rendered = fragment_list_to_text(render_doom_fire(context(lines, 17, 0.12))).split("\n")
+
+    assert rendered[-1].strip() == ""
+    assert sum(character in ".:*oO#@" for line in rendered for character in line) < 8
+
+
+def test_empty_source_does_not_create_artificial_fire() -> None:
+    lines = ("", "", "", "")
+
+    rendered = fragment_list_to_text(render_doom_fire(context(lines, 17, 0.4)))
+
+    assert rendered.strip() == ""
+
+
+def test_dense_row_ignites_irregularly_instead_of_as_a_solid_front() -> None:
+    line = "X" * 40
+
+    rendered = fragment_list_to_text(render_doom_fire(context((line,), 40, 0.04)))
+
+    assert "X" in rendered
+    assert any(glyph in rendered for glyph in ".:*oO#@")
+
+
+def test_fire_footprint_depends_on_source_density() -> None:
+    sparse = fragment_list_to_text(render_doom_fire(context(("X",) * 5, 20, 0.25)))
+    dense = fragment_list_to_text(render_doom_fire(context(("X" * 20,) * 5, 20, 0.25)))
+
+    fire_glyphs = set(".:*oO#@")
+    assert sum(character in fire_glyphs for character in sparse) < sum(
+        character in fire_glyphs for character in dense
+    )
 
 
 def test_doom_fire_uses_classic_intensity_colors_and_glyphs() -> None:

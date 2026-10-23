@@ -7,7 +7,13 @@ import pytest
 from prompt_toolkit.formatted_text import fragment_list_to_text
 from tfr.plugin_api import PluginRegistrationError, ScreenClearContext, terminal_cell_width
 
-from tfr_plugins_public.acid_rain import _corroded_cell, plugin, render_acid_rain
+from tfr_plugins_public.acid_rain import (
+    _collision_schedule,
+    _corroded_cell,
+    _source_cells,
+    plugin,
+    render_acid_rain,
+)
 
 
 @dataclass
@@ -89,6 +95,54 @@ def test_seeded_rain_streaks_are_visible_in_empty_space() -> None:
         if text.strip()
         for color in ("#afff00", "#87d700", "#5f8700")
     )
+
+
+def test_raindrop_stops_at_source_character_and_starts_a_fresh_burn() -> None:
+    source = ScreenClearContext(
+        lines=("", "", "  X", "", ""),
+        width=5,
+        progress=0,
+        seed=7,
+        styled_lines=((), (), (("fg:#d70000", "  X"),), (), ()),
+    )
+    cells = _source_cells(source)
+    impacts, _columns = _collision_schedule(source, cells)
+    impact = impacts[(2, 2)]
+
+    before = render_acid_rain(
+        ScreenClearContext(
+            lines=source.lines,
+            width=source.width,
+            progress=max(0, impact - 0.001),
+            seed=source.seed,
+            styled_lines=source.styled_lines,
+        )
+    )
+    struck = render_acid_rain(
+        ScreenClearContext(
+            lines=source.lines,
+            width=source.width,
+            progress=impact + 0.01,
+            seed=source.seed,
+            styled_lines=source.styled_lines,
+        )
+    )
+
+    assert any(style == "fg:#d70000" and "X" in text for style, text in before)
+    assert any(style == "bold fg:#afff00" and "X" in text for style, text in struck)
+    assert all(not set(line) & set("│:") for line in fragment_list_to_text(struck).split("\n")[3:])
+
+
+def test_stacked_characters_receive_sequential_impacts() -> None:
+    source = context((" X", " X", " X", " X"), 3, 0)
+
+    cells = _source_cells(source)
+    impacts, _columns = _collision_schedule(source, cells)
+
+    assert [impacts[(row, 1)] for row in range(4)] == sorted(
+        impacts[(row, 1)] for row in range(4)
+    )
+    assert len({impacts[(row, 1)] for row in range(4)}) == 4
 
 
 def test_acid_rain_is_deterministic_for_a_seed() -> None:
