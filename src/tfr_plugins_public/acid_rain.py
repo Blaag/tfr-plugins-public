@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import math
 from collections.abc import Mapping
+from dataclasses import dataclass
 from typing import Any
 
 from tfr.plugin_api import (
@@ -109,44 +110,109 @@ def _render_grid(grid: list[list[tuple[str, str] | None]]) -> list[tuple[str, st
     return fragments
 
 
-def _collision_schedule(
+@dataclass(frozen=True, slots=True)
+class _Drop:
+    column: int
+    spawn_row: int
+    start: float
+    rows_per_progress: float
+    collision_row: int | None
+    impact: float | None
+
+
+def _drop_schedule(
     context: ScreenClearContext,
     cells: list[tuple[int, int, int, str, str]],
-) -> tuple[dict[tuple[int, int], float], dict[int, list[tuple[int, float]]]]:
-    targets_by_column: dict[int, list[tuple[int, int]]] = {}
-    for index, (row, column, character_width, character, _style) in enumerate(cells):
+    density: float,
+) -> tuple[_Drop, ...]:
+    if density <= 0 or not context.lines or context.width < 1:
+        return ()
+
+    targets_by_column: dict[int, list[int]] = {}
+    for row, column, character_width, character, _style in cells:
         if character.isspace():
             continue
         for occupied_column in range(column, column + character_width):
-            targets_by_column.setdefault(occupied_column, []).append((row, index))
+            targets_by_column.setdefault(occupied_column, []).append(row)
 
-    impacts_by_index: dict[int, float] = {}
-    column_impacts: dict[int, list[tuple[int, float]]] = {}
-    height_scale = max(1, len(context.lines) - 1)
-    for column, targets in targets_by_column.items():
-        ordered_targets = sorted(set(targets))
-        first_row = ordered_targets[0][0]
-        first_impact = (
-            0.045
-            + first_row / height_scale * 0.35
-            + _variation(context.seed, column * 23 + 1) * 0.025
+    height = len(context.lines)
+    drop_count = max(1, math.ceil(context.width * density * 0.35))
+    drops: list[_Drop] = []
+    for index in range(drop_count):
+        salt = index * 97
+        column = min(
+            context.width - 1,
+            math.floor(_variation(context.seed, salt + 1) * context.width),
         )
-        slot = max(0.01, (0.86 - first_impact) / len(ordered_targets))
-        impacts: list[tuple[int, float]] = []
-        for order, (row, index) in enumerate(ordered_targets):
-            jitter = _variation(context.seed, column * 1_009 + row * 37 + order) * slot * 0.12
-            impact = first_impact + order * slot + jitter
-            impacts.append((row, impact))
-            impacts_by_index[index] = min(impacts_by_index.get(index, 1.0), impact)
-        column_impacts[column] = impacts
+        spawn_row = min(
+            height - 1,
+            math.floor(_variation(context.seed, salt + 2) * height),
+        )
+        start = 0.025 + _variation(context.seed, salt + 3) * 0.52
+        fall_duration = min(
+            0.18 + _variation(context.seed, salt + 4) * 0.12,
+            0.68 - start,
+        )
+        rows_per_progress = max(1, height - 1) / fall_duration
+        collision_row = next(
+            (
+                row
+                for row in sorted(set(targets_by_column.get(column, ())))
+                if row >= spawn_row
+            ),
+            None,
+        )
+        impact = (
+            start + (collision_row - spawn_row) / rows_per_progress
+            if collision_row is not None
+            else None
+        )
+        drops.append(
+            _Drop(
+                column=column,
+                spawn_row=spawn_row,
+                start=start,
+                rows_per_progress=rows_per_progress,
+                collision_row=collision_row,
+                impact=impact,
+            )
+        )
+    return tuple(drops)
 
-    return (
-        {
-            (cells[index][0], cells[index][1]): impact
-            for index, impact in impacts_by_index.items()
-        },
-        column_impacts,
+
+def _corrosion_schedule(
+    context: ScreenClearContext,
+    cells: list[tuple[int, int, int, str, str]],
+    drops: tuple[_Drop, ...],
+) -> dict[tuple[int, int], float]:
+    impacts = tuple(
+        (drop.collision_row, drop.column, drop.impact)
+        for drop in drops
+        if drop.collision_row is not None and drop.impact is not None
     )
+    height_scale = max(1, len(context.lines) - 1)
+    schedule: dict[tuple[int, int], float] = {}
+    for row, column, _character_width, character, _style in cells:
+        if character.isspace():
+            continue
+        if impacts:
+            arrival = min(
+                impact
+                + (abs(row - impact_row) * 1.5 + abs(column - impact_column)) * 0.035
+                + (
+                    0
+                    if (row, column) == (impact_row, impact_column)
+                    else _variation(context.seed, row * 1_009 + column * 37 + 5) * 0.025
+                )
+                for impact_row, impact_column, impact in impacts
+            )
+        else:
+            # A zero-density effect still has to fulfill the screen-clear contract.
+            # Keep the old quiet top-to-bottom diffusion when no rain can strike.
+            arrival = 0.045 + row / height_scale * 0.5
+            arrival += _variation(context.seed, row * 1_009 + column * 37 + 5) * 0.025
+        schedule[(row, column)] = min(0.7, arrival)
+    return schedule
 
 
 def _burn_duration(
@@ -154,11 +220,8 @@ def _burn_duration(
     row: int,
     column: int,
     impact: float,
-    next_impact: float | None = None,
 ) -> float:
     duration = 0.22 + _variation(seed, row * 131 + column * 17 + 3) * 0.08
-    if next_impact is not None:
-        duration = min(duration, max(0.01, (next_impact - impact) * 0.88))
     return min(duration, max(0.01, (1 - impact) / 0.91))
 
 
@@ -167,49 +230,33 @@ def _draw_rain(
     *,
     progress: float,
     seed: int,
-    density: float,
     streak_length: int,
-    collision_impacts: dict[int, list[tuple[int, float]]],
+    drops: tuple[_Drop, ...],
 ) -> None:
     if progress <= 0 or progress >= 1 or not grid:
         return
     height = len(grid)
-    width = len(grid[0])
-    span = height + streak_length
-    for column in range(width):
-        impacts = collision_impacts.get(column, ())
-        head: int | None = None
-        if impacts:
-            for row, impact in impacts:
-                travel_duration = 0.1 + row / max(1, height - 1) * 0.1
-                if progress < impact - travel_duration:
-                    continue
-                if progress < impact:
-                    travel = (progress - (impact - travel_duration)) / travel_duration
-                    head = math.floor(-streak_length + travel * (row + streak_length))
-                    break
-                hold = 0.045 + _variation(seed, column * 59 + row) * 0.035
-                if progress < impact + hold:
-                    head = row
-                    break
-            if head is None:
+    for index, drop in enumerate(drops):
+        if progress < drop.start:
+            continue
+        head = drop.spawn_row + math.floor((progress - drop.start) * drop.rows_per_progress)
+        if drop.collision_row is not None and drop.impact is not None:
+            hold = 0.035 + _variation(seed, index * 59 + drop.collision_row) * 0.025
+            if progress >= drop.impact + hold:
                 continue
-        else:
-            if _variation(seed, column * 11 + 1) > density:
-                continue
-            phase = _variation(seed, column * 11 + 2)
-            cycles = 1.1 + _variation(seed, column * 11 + 3) * 1.4
-            head = math.floor(((progress * cycles + phase) % 1.0) * span) - streak_length
-        for offset in range(streak_length):
+            head = min(head, drop.collision_row)
+        elif head >= height + streak_length:
+            continue
+        # Preserve the option for compatibility while keeping each visible drop compact.
+        visible_length = min(streak_length, 2)
+        for offset in range(visible_length):
             row = head - offset
-            if not 0 <= row < height or grid[row][column] is not None:
+            if not 0 <= row < height or grid[row][drop.column] is not None:
                 continue
             if offset == 0:
-                grid[row][column] = ("bold fg:#afff00", "│")
-            elif offset < streak_length / 2:
-                grid[row][column] = ("fg:#87d700", ":")
+                grid[row][drop.column] = ("bold fg:#afff00", "•")
             else:
-                grid[row][column] = ("fg:#5f8700", ".")
+                grid[row][drop.column] = ("fg:#5f8700", ".")
 
 
 def render_acid_rain(
@@ -226,26 +273,15 @@ def render_acid_rain(
         [None for _ in range(context.width)] for _ in range(height)
     ]
     source_cells = _source_cells(context)
-    collision_times, collision_impacts = _collision_schedule(context, source_cells)
+    drops = _drop_schedule(context, source_cells, density)
+    collision_times = _corrosion_schedule(context, source_cells, drops)
 
     for row, column, character_width, character, source_style in source_cells:
         if character.isspace():
             continue
         seed = context.seed * 1_009 + row * 131 + column * 17 + sum(map(ord, character))
         impact = collision_times[(row, column)]
-        next_impacts = [
-            next_impact
-            for occupied_column in range(column, column + character_width)
-            for next_row, next_impact in collision_impacts[occupied_column]
-            if next_row > row
-        ]
-        duration = _burn_duration(
-            context.seed,
-            row,
-            column,
-            impact,
-            min(next_impacts, default=None),
-        )
+        duration = _burn_duration(context.seed, row, column, impact)
         local_progress = min(1.0, max(0.0, (progress - impact) / duration))
         rendered = _corroded_cell(character, local_progress, _variation(seed, 2))
         if rendered is None:
@@ -262,9 +298,8 @@ def render_acid_rain(
         grid,
         progress=progress,
         seed=context.seed,
-        density=density,
         streak_length=streak_length,
-        collision_impacts=collision_impacts,
+        drops=drops,
     )
     return _render_grid(grid)
 

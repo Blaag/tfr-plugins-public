@@ -97,6 +97,7 @@ def test_manifest_records_compatibility_plugins_and_artifact(tmp_path: Path, mon
             "gag",
             "sandstorm",
             "speaker_effects",
+            "spotlight",
             "terminal_reveal",
             "vortex",
             "water",

@@ -8,9 +8,11 @@ from prompt_toolkit.formatted_text import fragment_list_to_text
 from tfr.plugin_api import PluginRegistrationError, ScreenClearContext, terminal_cell_width
 
 from tfr_plugins_public.acid_rain import (
-    _burn_duration,
-    _collision_schedule,
     _corroded_cell,
+    _corrosion_schedule,
+    _draw_rain,
+    _Drop,
+    _drop_schedule,
     _source_cells,
     plugin,
     render_acid_rain,
@@ -54,7 +56,7 @@ def test_acid_rain_starts_with_source_text_and_finishes_empty() -> None:
     assert finished.strip() == ""
 
 
-def test_acid_corrosion_advances_from_top_to_bottom() -> None:
+def test_zero_density_corrosion_retains_quiet_top_to_bottom_fallback() -> None:
     lines = ("AAAAAAAAAAAA",) * 6
 
     rendered = fragment_list_to_text(
@@ -89,7 +91,7 @@ def test_seeded_rain_streaks_are_visible_in_empty_space() -> None:
         render_acid_rain(source, density=1, streak_length=4)
     )
 
-    assert any(glyph in rendered for glyph in "│:.")
+    assert any(glyph in rendered for glyph in "•.")
     assert any(
         color in style
         for style, text in render_acid_rain(source, density=1, streak_length=4)
@@ -98,57 +100,55 @@ def test_seeded_rain_streaks_are_visible_in_empty_space() -> None:
     )
 
 
-def test_raindrop_stops_at_source_character_and_starts_a_fresh_burn() -> None:
-    source = ScreenClearContext(
-        lines=("", "", "  X", "", ""),
-        width=5,
-        progress=0,
+def test_raindrop_stops_at_source_character_without_drawing_below_it() -> None:
+    drop = _Drop(2, 1, 0.1, 10, 2, 0.2)
+    grid: list[list[tuple[str, str] | None]] = [[None] * 5 for _ in range(5)]
+    grid[2][2] = ("bold fg:#afff00", "X")
+
+    _draw_rain(
+        grid,
+        progress=0.21,
         seed=7,
-        styled_lines=((), (), (("fg:#d70000", "  X"),), (), ()),
+        streak_length=4,
+        drops=(drop,),
     )
+
+    assert grid[1][2] == ("fg:#5f8700", ".")
+    assert grid[2][2] == ("bold fg:#afff00", "X")
+    assert all(grid[row][2] is None for row in range(3, 5))
+
+
+def test_drops_spawn_throughout_viewport_and_collide_only_downward() -> None:
+    source = context(("", "", "XXXXXXXX", "", "YYYYYYYY", ""), 8, 0, seed=11)
+
+    drops = _drop_schedule(source, _source_cells(source), density=1)
+
+    assert drops
+    assert any(drop.spawn_row > 0 for drop in drops)
+    assert all(
+        drop.collision_row is None or drop.collision_row >= drop.spawn_row for drop in drops
+    )
+    assert all(drop.impact is None or drop.start <= drop.impact <= 0.68 for drop in drops)
+
+
+def test_impact_diffuses_to_nearby_text_before_distant_text() -> None:
+    source = context(("AAAAAAAAAA",) * 5, 10, 0)
     cells = _source_cells(source)
-    impacts, _columns = _collision_schedule(source, cells)
-    impact = impacts[(2, 2)]
 
-    before = render_acid_rain(
-        ScreenClearContext(
-            lines=source.lines,
-            width=source.width,
-            progress=max(0, impact - 0.001),
-            seed=source.seed,
-            styled_lines=source.styled_lines,
-        )
-    )
-    struck = render_acid_rain(
-        ScreenClearContext(
-            lines=source.lines,
-            width=source.width,
-            progress=impact + 0.01,
-            seed=source.seed,
-            styled_lines=source.styled_lines,
-        )
-    )
+    impacts = _corrosion_schedule(source, cells, (_Drop(4, 2, 0.1, 10, 2, 0.1),))
 
-    assert any(style == "fg:#d70000" and "X" in text for style, text in before)
-    assert any(style == "bold fg:#afff00" and "X" in text for style, text in struck)
-    assert all(not set(line) & set("│:") for line in fragment_list_to_text(struck).split("\n")[3:])
+    assert impacts[(2, 4)] == 0.1
+    assert impacts[(2, 4)] < impacts[(2, 9)]
+    assert impacts[(2, 4)] < impacts[(4, 4)]
 
 
-def test_stacked_characters_receive_sequential_impacts() -> None:
-    source = context((" X", " X", " X", " X"), 3, 0)
+def test_density_controls_sparse_drop_population_not_text_column_count() -> None:
+    source = context(("X" * 80,) * 20, 80, 0)
 
-    cells = _source_cells(source)
-    impacts, _columns = _collision_schedule(source, cells)
+    drops = _drop_schedule(source, _source_cells(source), density=0.32)
 
-    assert [impacts[(row, 1)] for row in range(4)] == sorted(
-        impacts[(row, 1)] for row in range(4)
-    )
-    assert len({impacts[(row, 1)] for row in range(4)}) == 4
-    for row in range(3):
-        impact = impacts[(row, 1)]
-        assert impact + _burn_duration(7, row, 1, impact, impacts[(row + 1, 1)]) < impacts[
-            (row + 1, 1)
-        ]
+    assert len(drops) == 9
+    assert len(drops) < source.width
 
 
 def test_acid_rain_is_deterministic_for_a_seed() -> None:

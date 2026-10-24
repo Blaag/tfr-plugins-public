@@ -180,6 +180,14 @@ a positive number no greater than 10. `frames_per_second` must be positive and
 no greater than 30. Both fields are optional, and unknown configuration fields
 are rejected.
 
+`spotlight` first fades the visible text into the pane background, then sends
+seeded circular lights of varying sizes across diagonal paths through the pane.
+Text inside a light retains its original style, while a dimmed, dithered feather
+softens each edge. The lights begin and end off-screen so their departure
+completes the clear. `spotlight_count` must be an integer from `2` through `5`
+and defaults to `3`; `duration_seconds` defaults to `3.6`, and
+`frames_per_second` defaults to `24` and cannot exceed `30`.
+
 `vortex` starts at the center and expands outward, pulling each character
 gradually into a tightening circular orbit until it disappears into the center.
 The softened leading edge avoids a rigid boundary between still and moving text,
