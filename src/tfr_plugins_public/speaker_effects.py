@@ -525,6 +525,12 @@ def _speaker_span(
     inferred_pose: bool = False,
 ) -> tuple[int, int] | None:
     plain = terminal_plain_text(text)
+    if event.kind is EventKind.PAGE:
+        marker = plain.casefold().rfind(" pages")
+        start = plain.casefold().rfind(speaker.casefold(), 0, marker if marker >= 0 else len(plain))
+        if start < 0:
+            return None
+        return start, start + len(speaker)
     prefix_end = plain.find("] ") if plain.startswith("[") else -1
     start = prefix_end + 2 if prefix_end >= 0 else 0
     while start < len(plain) and plain[start].isspace() and plain[start] not in "\r\n":

@@ -116,6 +116,25 @@ async def test_rules_apply_to_singular_pages() -> None:
     assert programs[0].variants[0].character_sweep is not None
 
 
+@pytest.mark.parametrize(
+    "text",
+    (
+        "Alice pages (black Blood): testes testes",
+        "To (Black, wedge), Alice pages: testing",
+    ),
+)
+async def test_rules_apply_to_attributed_multipages(text: str) -> None:
+    plugins = await manager()
+    page = speech(text, kind=EventKind.PAGE, sender="Alice")
+
+    programs = plugins.presentation_programs(page, text)
+
+    assert (programs[0].start, programs[0].end) == (
+        text.index("Alice"),
+        text.index("Alice") + len("Alice"),
+    )
+
+
 async def test_pose_rules_infer_configured_speakers_from_unclassified_output() -> None:
     plugins = await manager()
     raw_pose = speech("Alice waves.", kind=EventKind.RAW_OUTPUT, sender="ALICE")
