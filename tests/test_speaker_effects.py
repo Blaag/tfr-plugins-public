@@ -72,7 +72,7 @@ async def manager() -> PluginManager:
                         "color": "#d70000",
                         "accent_color": "#ffffff",
                         "period_seconds": 1.4,
-                        "kinds": ["say", "pose"],
+                        "kinds": ["say", "pose", "page"],
                     },
                     {
                         "speaker": "carol",
@@ -104,6 +104,35 @@ async def test_rules_match_attributed_speakers_case_insensitively() -> None:
     assert (alice_programs[0].start, alice_programs[0].end) == (0, 5)
     assert alice_programs[0].variants[0].character_sweep is not None
     assert carol_programs[0].variants[0].character_style_sweep is not None
+
+
+async def test_rules_apply_to_singular_pages() -> None:
+    plugins = await manager()
+    page = speech("Alice pages: how's it going", kind=EventKind.PAGE, sender="Alice")
+
+    programs = plugins.presentation_programs(page, page.display_text or "")
+
+    assert (programs[0].start, programs[0].end) == (0, 5)
+    assert programs[0].variants[0].character_sweep is not None
+
+
+@pytest.mark.parametrize(
+    "text",
+    (
+        "Alice pages (black Blood): testes testes",
+        "To (Black, wedge), Alice pages: testing",
+    ),
+)
+async def test_rules_apply_to_attributed_multipages(text: str) -> None:
+    plugins = await manager()
+    page = speech(text, kind=EventKind.PAGE, sender="Alice")
+
+    programs = plugins.presentation_programs(page, text)
+
+    assert (programs[0].start, programs[0].end) == (
+        text.index("Alice"),
+        text.index("Alice") + len("Alice"),
+    )
 
 
 async def test_pose_rules_infer_configured_speakers_from_unclassified_output() -> None:
